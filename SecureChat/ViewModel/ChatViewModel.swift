@@ -7,9 +7,13 @@
 
 import SwiftUI
 
-@Observable
 
-final class ChatViewModel {
+protocol ChatViewModelProtocol {
+    var chat: Chat? { get }
+}
+
+@Observable
+final class ChatViewModel: ChatViewModelProtocol {
     
     let chatID: UUID
     let repo: ChatRepositoryProtocol
@@ -18,5 +22,8 @@ final class ChatViewModel {
         self.chatID = chatID
         self.repo = repository
     }
-
+    
+    var chat: Chat? {
+        repo.chat.filter { $0.id == chatID }.first
+    }
 }

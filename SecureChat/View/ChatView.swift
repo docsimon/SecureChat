@@ -12,6 +12,6 @@ struct ChatView: View {
     @State var viewModel: ChatViewModel
     
     var body: some View {
-        
+        Text(viewModel.chat?.title ?? "Chat not available")
     }
 }

@@ -9,14 +9,13 @@ import SwiftUI
 
 struct MessageView: View {
     
-    var content: String
-    var time: String
+    var viewModel: MessageViewModel
     
     var body: some View {
         
         HStack(spacing: 10) {
-            Text(content)
-            Text(time)
+            Text(viewModel.content)
+            Text(viewModel.time)
         }
         
     }

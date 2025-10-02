@@ -1,0 +1,54 @@
+//
+//  MessageViewModel.swift
+//  SecureChat
+//
+//  Created by doc on 02/10/2025.
+//
+
+import Foundation
+
+protocol MessageViewModelProtocol {
+    var content: String { get }
+    var time: String { get }
+    var guest: String { get }
+}
+
+final class MessageViewModel: MessageViewModelProtocol {
+    var content: String {
+        message.content
+    }
+
+    var time: String {
+        getTime(from: message.timestamp)
+    }
+    
+    var guest: String {
+        let guest = getGuest(with: message.guestID)
+        return guest?.username ?? "Unknown"
+    }
+    
+    let message: Message
+    let guestRepo: GuestRepositoryProtocol
+    
+    init(message: Message, guestRepo: GuestRepositoryProtocol = GuestRepository()) {
+        self.message = message
+        self.guestRepo = guestRepo
+    }
+    
+    private func getTime(from timestamp: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        let date = formatter.date(from: timestamp)
+        let hours = date?.formatted(
+            Date.FormatStyle()
+                .hour(.defaultDigits(amPM: .abbreviated))
+                .minute(.twoDigits)
+        ) ?? ""
+        
+        return hours
+    }
+    
+    private func getGuest(with id: UUID) -> Guest? {
+        guestRepo.getGuest(id: id)
+    }
+    
+}

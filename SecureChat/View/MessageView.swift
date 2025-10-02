@@ -12,11 +12,15 @@ struct MessageView: View {
     var viewModel: MessageViewModel
     
     var body: some View {
-        
-        HStack(spacing: 10) {
-            Text(viewModel.content)
-            Text(viewModel.time)
+        VStack(alignment: .leading) {
+            Text("[\(viewModel.guest)]")
+            HStack(spacing: 10) {
+                Text(viewModel.content)
+                VStack {
+                    Spacer()
+                    Text(viewModel.time)
+                }
+            }
         }
-        
     }
 }

@@ -17,9 +17,9 @@ final class ChatRepository: ChatRepositoryProtocol {
         // chat 1
         let chatID_1 = UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8") ?? UUID()
         let guest_1 = guestRepo.guest[0]
-        let message_1 = MessageFactory.shared.make(id: UUID(), chatID: chatID_1, guestID: guest_1.id, content: "content of message 1", timestamp: Date().ISO8601Format(), ttl: 10)
+        let message_1 = MessageFactory.shared.make(id: UUID(), chatID: chatID_1, guestID: guest_1.id, content: "content of message 1, ciao come stai?", timestamp: Date().ISO8601Format(), ttl: 10)
         let guest_2 = guestRepo.guest[1]
-        let message_2 = MessageFactory.shared.make(id: UUID(), chatID: chatID_1, guestID: guest_2.id, content: "content of message 2", timestamp: Date().ISO8601Format(), ttl: 10)
+        let message_2 = MessageFactory.shared.make(id: UUID(), chatID: chatID_1, guestID: guest_2.id, content: "content of message 2, bene grazie, tu?", timestamp: Date().ISO8601Format(), ttl: 10)
         let chat1 = Chat(id: chatID_1, title: "Chat 1", guests: [guest_1, guest_2], messages: [message_1, message_2], timestamp: Date.now.description)
         
         // chat 2

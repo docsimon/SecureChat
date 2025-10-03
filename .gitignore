@@ -1,0 +1,110 @@
+# Xcode
+#
+# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+
+## User settings
+xcuserdata/
+
+## compatibility with Xcode 8 and earlier (ignoring not required starting Xcode 9)
+*.xcscmblueprint
+*.xccheckout
+
+## compatibility with Xcode 3 and earlier (ignoring not required starting Xcode 4)
+build/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+## Obj-C/Swift specific
+*.hmap
+
+## Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+## Xcode 9
+xcuserdata
+
+## Generated files
+*.o
+*.swp
+*~
+*.pyc
+
+## Log files
+*.log
+
+## Runtime data
+*.pid
+*.seed
+*.tbc
+
+## OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+## Xcode specific exclusions
+**/build/
+**/DerivedData/
+**/xcuserdata/
+**/*.xcuserstate
+**/*.xcscheme/xcscheme
+**/*.xcscheme/project.xcworkspace/xcuserdata/
+**/*.xcscheme/xcshareddata/
+**/*.xcworkspace/xcuserdata/
+**/*.xcworkspace/xcuserdataversion
+**/*.xcworkspace/contents.xcworkspacedata
+**/*.xcworkspace/project.xcworkspace/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+**/*.xcworkspace/xcuserdataversion
+**/*.xcworkspace/contents.xcworkspacedata
+
+## CocoaPods
+# CocoaPods: ignore all files in the Pods/ directory.
+Pods/
+
+# CocoaPods: include Podfile and any other project files.
+!Podfile
+!Podfile.lock
+
+# CocoaPods: add this line if you have a local Podfile.lock
+# !Podfile.lock
+
+## Carthage
+# Carthage: ignore the entire Carthage folder
+Carthage/
+
+## Swift Package Manager
+# SPM: ignore the entire SPM package directories
+Packages/
+.build/
+Product/
+
+## SPM: add this line if you want to ignore SPM's lockfile
+# Package.resolved
+
+## Other
+# App packaging
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+*.xcframework
+
+# Crash reports
+*.crash
+
+# Code injection
+*.dSYM

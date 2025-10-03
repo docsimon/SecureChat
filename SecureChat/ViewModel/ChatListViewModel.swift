@@ -23,9 +23,4 @@ final class ChatListViewModel: ChatListViewModelProtocol {
     var chatList: [ChatListModel] {
         return chatRepo.chatList
     }
-    
-    func printID(model: ChatListModel) {
-        print(model.chatID)
-    }
-    
 }

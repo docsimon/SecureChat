@@ -16,7 +16,7 @@ struct MessageView: View {
             Text("[\(viewModel.guest)]")
             HStack(spacing: 10) {
                 Text(viewModel.content)
-                VStack {
+                VStack(alignment: .trailing) {
                     Spacer()
                     Text(viewModel.time)
                 }

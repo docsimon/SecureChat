@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Message: Identifiable, Codable {
+struct Message: Identifiable, Equatable, Codable {
     let id: UUID // Unique identifier of the message
     let chatID: UUID // ID of the chat wher ethe mesage should be diplayed
     let guestID: UUID // The ID of the user creating the message

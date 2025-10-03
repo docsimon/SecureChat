@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Chat {
+struct Chat: Equatable {
     let id: UUID
     let title: String
     let guests: [Guest]

@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Guest {
+struct Guest: Equatable {
     let id: UUID
     let username: String
 }

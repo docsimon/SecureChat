@@ -7,6 +7,8 @@
 
 import Foundation
 
+@testable import SecureChat
+
 final class ChatRepositoryMock: ChatRepositoryProtocol {
     
     var chatStub = [Chat]()

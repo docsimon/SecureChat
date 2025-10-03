@@ -11,5 +11,14 @@ struct ChatListModel: Identifiable {
     let id = UUID()
     let chatID: UUID
     let title: String
-    let timestamp: String
+    let date: Date
+    
+    var formattedDate: String {
+        return date.formatted(
+            Date.FormatStyle()
+                .year(.defaultDigits)
+                .month(.abbreviated)
+                .day(.twoDigits)
+            )
+    }
 }

@@ -19,7 +19,7 @@ final class MessageViewModel: MessageViewModelProtocol {
     }
 
     var time: String {
-        getTime(from: message.timestamp)
+        getTime(from: message.date)
     }
     
     var guest: String {
@@ -35,15 +35,12 @@ final class MessageViewModel: MessageViewModelProtocol {
         self.guestRepo = guestRepo
     }
     
-    private func getTime(from timestamp: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        let date = formatter.date(from: timestamp)
-        let hours = date?.formatted(
+    private func getTime(from date: Date) -> String {
+        let hours = date.formatted(
             Date.FormatStyle()
                 .hour(.defaultDigits(amPM: .abbreviated))
                 .minute(.twoDigits)
-        ) ?? ""
-        
+        )
         return hours
     }
     

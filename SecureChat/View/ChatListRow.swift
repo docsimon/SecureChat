@@ -14,7 +14,7 @@ struct ChatListRow: View {
     var body: some View {
         VStack(alignment: .leading) {
             Text(chatListModel.title)
-            Text(chatListModel.timestamp)
+            Text(chatListModel.formattedDate)
         }
     }
     

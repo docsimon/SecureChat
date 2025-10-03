@@ -7,7 +7,7 @@
 import Foundation
 
 protocol ChatFactoryProtocol {
-    func make(id: UUID, title: String, guests: [Guest], messages: [Message], timestamp: String) -> Chat
+    func make(id: UUID, title: String, guests: [Guest], messages: [Message], date: Date) -> Chat
 }
 
 protocol GuestFactoryProtocol {
@@ -15,15 +15,15 @@ protocol GuestFactoryProtocol {
 }
 
 protocol MessageFactoryProtocol {
-    func make(id: UUID, chatID: UUID, guestID: UUID, content: String, timestamp: String, ttl: Int) -> Message
+    func make(id: UUID, chatID: UUID, guestID: UUID, content: String, date: Date, ttl: Int) -> Message
 }
 
 final class ChatFactory: ChatFactoryProtocol {
 
     static let shared = ChatFactory()
     
-    func make(id: UUID = UUID(), title: String, guests: [Guest], messages: [Message], timestamp: String) -> Chat {
-        return Chat(id: id, title: title, guests: guests, messages: messages, timestamp: timestamp)
+    func make(id: UUID = UUID(), title: String, guests: [Guest], messages: [Message], date: Date) -> Chat {
+        return Chat(id: id, title: title, guests: guests, messages: messages, date: date)
     }
 }
 
@@ -38,7 +38,7 @@ final class GuestFactory: GuestFactoryProtocol {
 final class MessageFactory: MessageFactoryProtocol {
     static let shared = MessageFactory()
     
-    func make(id: UUID, chatID: UUID, guestID: UUID, content: String,  timestamp: String, ttl: Int) -> Message {
-        return Message(id: id, chatID: chatID, guestID: guestID, content: content, timestamp: timestamp, ttl: ttl)
+    func make(id: UUID, chatID: UUID, guestID: UUID, content: String,  date: Date, ttl: Int) -> Message {
+        return Message(id: id, chatID: chatID, guestID: guestID, content: content, date: date, ttl: ttl)
     }
 }

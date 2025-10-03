@@ -12,5 +12,5 @@ struct Chat {
     let title: String
     let guests: [Guest]
     let messages: [Message]
-    let timestamp: String
+    let date: Date
 }

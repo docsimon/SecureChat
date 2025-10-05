@@ -2,7 +2,7 @@
 //  Untitled.swift
 //  SecureChat
 //
-//  Created by doc on 03/10/2025.
+//  Created by Simone Barbara on 03/10/2025.
 //
 
 import Foundation

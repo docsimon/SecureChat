@@ -2,7 +2,7 @@
 //  MessageViewModel.swift
 //  SecureChat
 //
-//  Created by doc on 02/10/2025.
+//  Created by Simone Barbara on 02/10/2025.
 //
 
 import Foundation

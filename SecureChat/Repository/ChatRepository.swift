@@ -2,7 +2,7 @@
 //  ChatRepository.swift
 //  SecureChat
 //
-//  Created by doc on 02/10/2025.
+//  Created by Simone Barbara on 02/10/2025.
 //
 
 import Foundation
@@ -10,36 +10,31 @@ import Foundation
 protocol ChatRepositoryProtocol {
     var chat: [Chat] { get }
     var chatList: [ChatListModel] { get }
+    func getMessage(from id: MessageID) -> Message
 }
 
 final class ChatRepository: ChatRepositoryProtocol {
-    let guestRepo = GuestRepository()
+    
+    let guestRepo: GuestRepositoryProtocol
+    let messageRepo: MessageRepositoryProtocol
+    
+    init(guestRepo: GuestRepositoryProtocol = GuestRepository(), messageRepo: MessageRepositoryProtocol = MessageRepository()) {
+        self.guestRepo = guestRepo
+        self.messageRepo = messageRepo
+    }
+    
     var chat: [Chat] {
         // chat 1
-        let chatID_1 = UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8") ?? UUID()
-        let guest_1 = guestRepo.guest[0]
-        let message_1 = MessageFactory.shared.make(id: UUID(), chatID: chatID_1, guestID: guest_1.id, content: "content of message 1, ciao come stai?", date: Date(), ttl: 10)
-        let guest_2 = guestRepo.guest[1]
-        let message_2 = MessageFactory.shared.make(id: UUID(), chatID: chatID_1, guestID: guest_2.id, content: "content of message 2, bene grazie, tu?", date: Date(), ttl: 10)
-        let chat1 = Chat(id: chatID_1, title: "Chat 1", guests: [guest_1, guest_2], messages: [message_1, message_2], date: Date.now)
+        let chatID_1 = UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!
+        let chat1 = Chat(id: chatID_1, title: "Chat 1", guests: [guestRepo.guest[0].id, guestRepo.guest[1].id], messages: [MessageID(id: messageRepo.mockMessages[0].id), MessageID(id: messageRepo.mockMessages[1].id)], date: Date.now)
         
         // chat 2
-        let chatID_2 = UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B") ?? UUID()
-
-        let guest_3 = guestRepo.guest[2]
-        let message_3 = MessageFactory.shared.make(id: UUID(), chatID: chatID_2, guestID: guest_3.id, content: "content of message 3", date: Date(), ttl: 10)
-        let guest_4 = guestRepo.guest[3]
-        let message_4 = MessageFactory.shared.make(id: UUID(), chatID: chatID_2, guestID: guest_4.id, content: "content of message 4", date: Date(), ttl: 10)
-        let chat2 = Chat(id: chatID_2, title: "Chat 2", guests: [guest_3, guest_4], messages: [message_3, message_4], date: Date.now)
+        let chatID_2 = UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!
+        let chat2 = Chat(id: chatID_2, title: "Chat 2", guests: [guestRepo.guest[2].id, guestRepo.guest[3].id], messages: [MessageID(id: messageRepo.mockMessages[2].id), MessageID(id: messageRepo.mockMessages[3].id)], date: Date.now)
         
         // chat 2
-        let chatID_3 = UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7") ?? UUID()
-
-        let guest_5 = guestRepo.guest[4]
-        let message_5 = MessageFactory.shared.make(id: UUID(), chatID: chatID_3, guestID: guest_5.id, content: "content of message 5", date: Date(), ttl: 10)
-        let guest_6 = guestRepo.guest[5]
-        let message_6 = MessageFactory.shared.make(id: UUID(), chatID: chatID_3, guestID: guest_6.id, content: "content of message 6", date: Date(), ttl: 10)
-        let chat3 = Chat(id: chatID_3, title: "Chat3", guests: [guest_5, guest_6], messages: [message_5, message_6], date: Date.now)
+        let chatID_3 = UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!
+        let chat3 = Chat(id: chatID_3, title: "Chat3", guests: [guestRepo.guest[4].id, guestRepo.guest[5].id], messages: [MessageID(id: messageRepo.mockMessages[4].id), MessageID(id: messageRepo.mockMessages[5].id)], date: Date.now)
         
         return [chat1, chat2, chat3]
     }
@@ -49,4 +44,12 @@ final class ChatRepository: ChatRepositoryProtocol {
         ChatListModel(chatID: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, title: "Chat 2", date: Date.now),
         ChatListModel(chatID: UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!, title: "Chat 3", date: Date.now)
     ]
+    
+    func getMessage(from id: MessageID) -> Message {
+        guard let message = messageRepo.getMessage(with: id) else {
+            fatalError("Message cannot be nil")
+        }
+        return message
+    }
+    
 }

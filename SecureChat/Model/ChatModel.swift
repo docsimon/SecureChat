@@ -9,7 +9,7 @@ import Foundation
 
 typealias GuestID = UUID
 
-struct MessageID: Identifiable, Equatable {
+struct MessageID: Identifiable, Equatable, Hashable, Codable {
     let id: UUID
 }
 

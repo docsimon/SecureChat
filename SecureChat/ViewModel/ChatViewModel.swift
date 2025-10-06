@@ -26,7 +26,7 @@ final class ChatViewModel: ChatViewModelProtocol {
     }
     
     var chat: Chat? {
-        repo.chatDict[chatID]
+        repo.getChat(with: chatID)
     }
     
     func getMessage(from id: MessageID) -> Message {

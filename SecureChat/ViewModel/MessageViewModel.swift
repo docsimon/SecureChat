@@ -11,13 +11,13 @@ protocol MessageViewModelProtocol {
     var content: String { get }
     var time: String { get }
     var guest: String { get }
-    //func send(message: Message)
+    func create(content: String) -> Message?
 }
 
 final class MessageViewModel: MessageViewModelProtocol {
-//    func send(message: Message) {
-//        
-//    }
+    func create(content: String) -> Message? {
+        nil
+    }
     
     var content: String {
         message.content

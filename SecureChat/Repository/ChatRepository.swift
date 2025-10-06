@@ -11,16 +11,32 @@ protocol ChatRepositoryProtocol {
     var chat: [Chat] { get }
     var chatList: [ChatListModel] { get }
     func getMessage(from id: MessageID) -> Message
+    var chatDict: [ChatID: Chat] { get set }
 }
 
 final class ChatRepository: ChatRepositoryProtocol {
-    
+
     let guestRepo: GuestRepositoryProtocol
     let messageRepo: MessageRepositoryProtocol
+    private var dict = [ChatID: Chat]()
     
     init(guestRepo: GuestRepositoryProtocol = GuestRepository(), messageRepo: MessageRepositoryProtocol = MessageRepository()) {
         self.guestRepo = guestRepo
         self.messageRepo = messageRepo
+        dict = [
+            UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!: Chat(id: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, title: "Chat 1", guests: [guestRepo.guest[0].id, guestRepo.guest[1].id], messages: [MessageID(id: messageRepo.mockMessages[0].id), MessageID(id: messageRepo.mockMessages[1].id)], date: Date.now),
+            UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!: Chat(id: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, title: "Chat 2", guests: [guestRepo.guest[2].id, guestRepo.guest[3].id], messages: [MessageID(id: messageRepo.mockMessages[2].id), MessageID(id: messageRepo.mockMessages[3].id)], date: Date.now),
+            UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!: Chat(id: UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!, title: "Chat3", guests: [guestRepo.guest[4].id, guestRepo.guest[5].id], messages: [MessageID(id: messageRepo.mockMessages[4].id), MessageID(id: messageRepo.mockMessages[5].id)], date: Date.now)
+        ]
+    }
+    
+    var chatDict: [ChatID: Chat] {
+        get {
+            dict
+        }
+        set {
+            dict = newValue
+        }
     }
     
     var chat: [Chat] {

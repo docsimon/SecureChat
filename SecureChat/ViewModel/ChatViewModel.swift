@@ -11,6 +11,7 @@ import SwiftUI
 protocol ChatViewModelProtocol {
     var chat: Chat? { get }
     func getMessage(from id: MessageID) -> Message
+    //func sendMessage(text: String) async
 }
 
 @Observable
@@ -25,10 +26,14 @@ final class ChatViewModel: ChatViewModelProtocol {
     }
     
     var chat: Chat? {
-        repo.chat.filter { $0.id == chatID }.first
+        repo.chatDict[chatID]
     }
     
     func getMessage(from id: MessageID) -> Message {
         return repo.getMessage(from: id)
     }
+    
+//    func sendMessage(text: String) async {
+//        
+//    }
 }

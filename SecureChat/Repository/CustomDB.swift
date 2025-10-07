@@ -13,12 +13,14 @@ final class CustomDB: DatabaseStrategy {
     private var guestDict = [GuestID: Guest]()
     private var chatDict = [ChatID: Chat]()
     private var messageDict = [MessageID: Message]()
-    weak var delegate: DatabaseDelegate?
+    private let notificationCenter: NotificationCenter
     
-    init() {
+    init(notificationCenter: NotificationCenter = NotificationCenter.default) {
+        self.notificationCenter = notificationCenter
         createMockGuests()
         createMockChats()
         createMockMessages()
+        
     }
     
     //MARK: DatabaseStrategy
@@ -36,7 +38,7 @@ final class CustomDB: DatabaseStrategy {
     func saveMessage(message: Message) {
         let messageID = message.id
         messageDict[messageID] = message
-        delegate?.messageUpdated(message: message)
+        notificationCenter.post(Notification(name: ChatNotification.newMessage, object: message))
     }
 
     

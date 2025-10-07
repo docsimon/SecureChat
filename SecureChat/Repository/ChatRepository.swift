@@ -11,19 +11,22 @@ protocol ChatRepositoryProtocol {
     var chatList: [ChatListModel] { get }
     func getMessage(from id: MessageID) -> Message
     func getChat(with id: ChatID) -> Chat?
+    //func sendMessage(message: Message) async
+    func createMessage(with text: String, chatID: ChatID) async
 }
 
-final class ChatRepository: ChatRepositoryProtocol {
-
+final class ChatRepository: ChatRepositoryProtocol, DatabaseDelegate {
+    
     let guestRepo: GuestRepositoryProtocol
     let messageRepo: MessageRepositoryProtocol
-    let db: DatabaseStrategy
+    private var db: DatabaseStrategy
     
     
-    init(guestRepo: GuestRepositoryProtocol = GuestRepository(), messageRepo: MessageRepositoryProtocol = MessageRepository(), db: DatabaseStrategy = CustomDB()) {
+    init(guestRepo: GuestRepositoryProtocol = GuestRepository(), messageRepo: MessageRepositoryProtocol = MessageRepository(), db: DatabaseStrategy = CustomDB.shared) {
         self.guestRepo = guestRepo
         self.messageRepo = messageRepo
         self.db = db
+        self.db.delegate = self
     }
     
 
@@ -42,4 +45,21 @@ final class ChatRepository: ChatRepositoryProtocol {
         return db.getChat(id: id)
     }
     
+    func createMessage(with text: String, chatID: ChatID) {
+        messageRepo.createMessage(with: text, chatID: chatID)
+    }
+    
+    //MARK: DatabaseDelegate
+    
+    func messageUpdated(message: Message) {
+        // logic to send the message
+        
+        // logic to update the chat view
+        print("There is a new message", message.content)
+    }
+    
+    private func sendMessage(message: Message) async {
+
+    }
+   
 }

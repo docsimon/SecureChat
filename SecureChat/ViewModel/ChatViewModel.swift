@@ -12,11 +12,12 @@ protocol ChatViewModelProtocol {
     var chat: Chat? { get }
     func getMessage(from id: MessageID) -> Message
     //func sendMessage(text: String) async
+    func createMessage(with text: String) async
 }
 
 @Observable
 final class ChatViewModel: ChatViewModelProtocol {
-    
+   
     let chatID: UUID
     let repo: ChatRepositoryProtocol
     
@@ -33,7 +34,8 @@ final class ChatViewModel: ChatViewModelProtocol {
         return repo.getMessage(from: id)
     }
     
-//    func sendMessage(text: String) async {
-//        
-//    }
+    func createMessage(with text: String) async {
+        print("Message sent!", text)
+        await repo.createMessage(with: text, chatID: chatID)
+    }
 }

@@ -15,4 +15,9 @@ protocol DatabaseStrategy {
     func getGuest(id: GuestID) -> Guest?
     func getChat(id: ChatID) -> Chat?
     var chatList: [ChatListModel] { get }
+    var delegate: DatabaseDelegate? { get set }
+}
+
+protocol DatabaseDelegate: AnyObject {
+    func messageUpdated(message: Message)
 }

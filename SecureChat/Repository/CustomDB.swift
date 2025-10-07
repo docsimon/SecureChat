@@ -9,9 +9,11 @@ import Foundation
 
 final class CustomDB: DatabaseStrategy {
 
+    static let shared = CustomDB()
     private var guestDict = [GuestID: Guest]()
     private var chatDict = [ChatID: Chat]()
     private var messageDict = [MessageID: Message]()
+    weak var delegate: DatabaseDelegate?
     
     init() {
         createMockGuests()
@@ -34,6 +36,7 @@ final class CustomDB: DatabaseStrategy {
     func saveMessage(message: Message) {
         let messageID = message.id
         messageDict[messageID] = message
+        delegate?.messageUpdated(message: message)
     }
 
     

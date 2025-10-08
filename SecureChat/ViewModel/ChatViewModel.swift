@@ -13,6 +13,7 @@ protocol ChatViewModelProtocol {
     func getMessage(from id: MessageID) -> Message
     //func sendMessage(text: String) async
     func createMessage(with text: String) async
+    var shouldUpdateChat: UUID { get set }
 }
 
 @Observable
@@ -20,7 +21,7 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
    
     let chatID: UUID
     let repo: ChatRepositoryProtocol
-    var shouldUpdateChat: Bool = false
+    var shouldUpdateChat: UUID = UUID()
     
     init(repository: ChatRepositoryProtocol = ChatRepository.shared, chatID: ChatID) {
         self.chatID = chatID
@@ -48,7 +49,6 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
         
         // logic to update the chat view
         print("There is a new message")
-        shouldUpdateChat.toggle()
-        
+        shouldUpdateChat = UUID()
     }
 }

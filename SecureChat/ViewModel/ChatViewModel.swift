@@ -20,7 +20,7 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
    
     let chatID: UUID
     let repo: ChatRepositoryProtocol
-    private var shouldUpdateChat: Bool = false
+    var shouldUpdateChat: Bool = false
     
     init(repository: ChatRepositoryProtocol = ChatRepository.shared, chatID: ChatID) {
         self.chatID = chatID
@@ -47,8 +47,8 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
         // logic to send the message
         
         // logic to update the chat view
-        print("There is a new message", message.content)
+        print("There is a new message")
         shouldUpdateChat.toggle()
-        print(shouldUpdateChat)
+        
     }
 }

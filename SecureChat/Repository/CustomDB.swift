@@ -15,12 +15,11 @@ final class CustomDB: DatabaseStrategy {
     private var messageDict = [MessageID: Message]()
     private let notificationCenter: NotificationCenter
     
-    init(notificationCenter: NotificationCenter = NotificationCenter.default) {
+    private init(notificationCenter: NotificationCenter = NotificationCenter.default) {
         self.notificationCenter = notificationCenter
         createMockGuests()
         createMockChats()
         createMockMessages()
-        
     }
     
     //MARK: DatabaseStrategy
@@ -37,11 +36,14 @@ final class CustomDB: DatabaseStrategy {
     
     func saveMessage(message: Message) {
         let messageID = message.id
+        // Update Message Dictionary
         messageDict[messageID] = message
+        // Update Chat Dictionary
+        chatDict[message.chatID]?.messages.append(messageID)
+        // Send notification to subscribers (currently only ChatRepository)
         notificationCenter.post(Notification(name: ChatNotification.newMessage, object: message))
     }
 
-    
     func getMessage(id: MessageID) -> Message? {
         return messageDict[id]
     }
@@ -65,7 +67,7 @@ final class CustomDB: DatabaseStrategy {
     
     private func createMockGuests() {
         let guests = [
-        Guest(id: UUID(uuidString: "123e4567-e89b-12d3-a456-426614174000")!, username: "Simone"),
+        Guest(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, username: "Simone"),
         Guest(id: UUID(uuidString: "987fcdeb-1234-5678-9012-34567890abcd")!, username: "Ciccio"),
         Guest(id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!, username: "Formaggio"),
         Guest(id: UUID(uuidString: "6ba7b810-9dad-11d1-80b4-00c04fd430c8")!, username: "Cippalippa"),
@@ -81,7 +83,7 @@ final class CustomDB: DatabaseStrategy {
         
         chatDict = [
             UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!: Chat(id: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, title: "Chat 1",
-                guests: [UUID(uuidString: "123e4567-e89b-12d3-a456-426614174000")!, UUID(uuidString: "987fcdeb-1234-5678-9012-34567890abcd")!],
+                guests: [UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, UUID(uuidString: "987fcdeb-1234-5678-9012-34567890abcd")!],
                 messages: [MessageID(id: UUID(uuidString: "00000000-240E-4025-81E3-16B29B6333A7")!), MessageID(id: UUID(uuidString: "00000001-240E-4025-81E3-16B29B6333A7")!)],
                 date: Date.now),
             
@@ -93,7 +95,7 @@ final class CustomDB: DatabaseStrategy {
     
     private func createMockMessages() {
         let messages = [
-            Message(id: MessageID(id: UUID(uuidString: "00000000-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, guestID: UUID(uuidString: "123e4567-e89b-12d3-a456-426614174000")!, content: "content of message 1, ciao come stai?", date: Date(), ttl: 10),
+            Message(id: MessageID(id: UUID(uuidString: "00000000-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, guestID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, content: "content of message 1, ciao come stai?", date: Date(), ttl: 10),
             Message(id: MessageID(id: UUID(uuidString: "00000001-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, guestID: UUID(uuidString: "987fcdeb-1234-5678-9012-34567890abcd")!, content: "content of message 2, bene grazie, tu?", date: Date(), ttl: 10),
             Message(id: MessageID(id: UUID(uuidString: "00000002-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, guestID: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!, content: "content of message 3", date: Date(), ttl: 10),
             Message(id: MessageID(id: UUID(uuidString: "00000003-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, guestID: UUID(uuidString: "6ba7b810-9dad-11d1-80b4-00c04fd430c8")!, content: "content of message 4", date: Date(), ttl: 10),

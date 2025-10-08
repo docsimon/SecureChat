@@ -26,11 +26,10 @@ final class ChatRepository: ChatRepositoryProtocol {
     weak var delegate: ChatRepositoryDelegate?
     private let notificationCenter: NotificationCenter
     private var db: DatabaseStrategy
-    private var counter = 0
     
     static let shared = ChatRepository()
     
-    init(guestRepo: GuestRepositoryProtocol = GuestRepository.shared, messageRepo: MessageRepositoryProtocol = MessageRepository.shared, db: DatabaseStrategy = CustomDB.shared, notificationCenter: NotificationCenter = NotificationCenter.default) {
+    private init(guestRepo: GuestRepositoryProtocol = GuestRepository.shared, messageRepo: MessageRepositoryProtocol = MessageRepository.shared, db: DatabaseStrategy = CustomDB.shared, notificationCenter: NotificationCenter = NotificationCenter.default) {
         self.notificationCenter = notificationCenter
         self.guestRepo = guestRepo
         self.messageRepo = messageRepo
@@ -71,8 +70,6 @@ final class ChatRepository: ChatRepositoryProtocol {
             return
         }
         delegate?.messageUpdated(message: message)
-        counter += 1
-        print("counter:", counter)
     }
     
     deinit {

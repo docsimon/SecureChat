@@ -16,7 +16,7 @@ struct MessageID: Identifiable, Equatable, Hashable, Codable {
 struct Chat: Equatable {
     let id: UUID
     let title: String
-    let guests: [GuestID]
-    let messages: [MessageID]
+    var guests: [GuestID]
+    var messages: [MessageID]
     let date: Date
 }

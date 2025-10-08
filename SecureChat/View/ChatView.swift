@@ -13,6 +13,7 @@ struct ChatView: View {
     
     var body: some View {
         VStack {
+            
             List(viewModel.chat?.messages ?? []) { messageID in
                 MessageView(viewModel: MessageViewModel(message: viewModel.getMessage(from: messageID)))
             }

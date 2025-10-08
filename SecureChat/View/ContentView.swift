@@ -13,13 +13,14 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List(chatListViewModel.chatList) { model in
-                NavigationLink {
-                    ChatView(viewModel: ChatViewModel(chatID: model.chatID))
-                } label: {
+                NavigationLink(value: model.chatID) {
                     ChatListRow(chatListModel: model)
                 }
             }
             .navigationTitle("Chats")
+            .navigationDestination(for: UUID.self) { chatID in
+                ChatView(viewModel: ChatViewModel(chatID: chatID))
+            }
         }
     }
 }

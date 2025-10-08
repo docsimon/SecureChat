@@ -9,28 +9,32 @@ import SwiftUI
 import Observation
 
 protocol ChatViewModelProtocol {
-    var chat: Chat? { get }
+    var chat: Chat? { get set }
     func getMessage(from id: MessageID) -> Message
-    //func sendMessage(text: String) async
     func createMessage(with text: String) async
-    var shouldUpdateChat: UUID { get set }
 }
 
 @Observable
 final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
-   
+
     let chatID: UUID
     let repo: ChatRepositoryProtocol
-    var shouldUpdateChat: UUID = UUID()
+    private var newChat: Chat?
     
     init(repository: ChatRepositoryProtocol = ChatRepository.shared, chatID: ChatID) {
         self.chatID = chatID
         self.repo = repository
         self.repo.delegate = self
+        newChat = repo.getChat(with: chatID)
     }
     
     var chat: Chat? {
-        repo.getChat(with: chatID)
+        get {
+            newChat
+        }
+        set {
+            newChat = newValue
+        }
     }
     
     func getMessage(from id: MessageID) -> Message {
@@ -49,6 +53,6 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
         
         // logic to update the chat view
         print("There is a new message")
-        shouldUpdateChat = UUID()
+        newChat = repo.getChat(with: chatID)
     }
 }

@@ -14,6 +14,8 @@ protocol MessageRepositoryProtocol {
 
 final class MessageRepository: MessageRepositoryProtocol {
     
+    static let shared = MessageRepository()
+    
     private let db: DatabaseStrategy
     
     init(db: DatabaseStrategy = CustomDB.shared) {

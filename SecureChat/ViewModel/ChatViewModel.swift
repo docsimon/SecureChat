@@ -22,7 +22,7 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
     let repo: ChatRepositoryProtocol
     private var shouldUpdateChat: Bool = false
     
-    init(repository: ChatRepositoryProtocol = ChatRepository(), chatID: ChatID) {
+    init(repository: ChatRepositoryProtocol = ChatRepository.shared, chatID: ChatID) {
         self.chatID = chatID
         self.repo = repository
         self.repo.delegate = self

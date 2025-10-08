@@ -28,15 +28,15 @@ final class ChatRepository: ChatRepositoryProtocol {
     private var db: DatabaseStrategy
     private var counter = 0
     
+    static let shared = ChatRepository()
     
-    init(guestRepo: GuestRepositoryProtocol = GuestRepository(), messageRepo: MessageRepositoryProtocol = MessageRepository(), db: DatabaseStrategy = CustomDB.shared, notificationCenter: NotificationCenter = NotificationCenter.default) {
+    init(guestRepo: GuestRepositoryProtocol = GuestRepository.shared, messageRepo: MessageRepositoryProtocol = MessageRepository.shared, db: DatabaseStrategy = CustomDB.shared, notificationCenter: NotificationCenter = NotificationCenter.default) {
         self.notificationCenter = notificationCenter
         self.guestRepo = guestRepo
         self.messageRepo = messageRepo
         self.db = db
         registerObserver(for: ChatNotification.newMessage)
     }
-    
 
     var chatList: [ChatListModel] {
         db.chatList

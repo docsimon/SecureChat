@@ -35,7 +35,7 @@ final class MessageViewModel: MessageViewModelProtocol {
     let message: Message
     let guestRepo: GuestRepositoryProtocol
     
-    init(message: Message, guestRepo: GuestRepositoryProtocol = GuestRepository()) {
+    init(message: Message, guestRepo: GuestRepositoryProtocol = GuestRepository.shared) {
         self.message = message
         self.guestRepo = guestRepo
     }

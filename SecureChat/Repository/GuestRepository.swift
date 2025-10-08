@@ -14,10 +14,12 @@ protocol GuestRepositoryProtocol {
 
 final class GuestRepository: GuestRepositoryProtocol {
     
+    static let shared = GuestRepository()
+
     func getGuest(id: UUID) -> Guest? {
         return guest.filter { $0.id == id }.first
     }
-    
+
     var guest: [Guest] {
         return [
             Guest(id: UUID(uuidString: "123e4567-e89b-12d3-a456-426614174000")!, username: "Simone"),

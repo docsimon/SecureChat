@@ -19,22 +19,32 @@ protocol ChatRepositoryDelegate: AnyObject {
     func messageUpdated(message: Message)
 }
 
-final class ChatRepository: ChatRepositoryProtocol {
-    
+final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
+
     let guestRepo: GuestRepositoryProtocol
     let messageRepo: MessageRepositoryProtocol
     weak var delegate: ChatRepositoryDelegate?
     private let notificationCenter: NotificationCenter
     private var db: DatabaseStrategy
+    private let client: ClientProtocol
+    private let adapter: JSONAdapterProtocol
     
     static let shared = ChatRepository()
     
-    private init(guestRepo: GuestRepositoryProtocol = GuestRepository.shared, messageRepo: MessageRepositoryProtocol = MessageRepository.shared, db: DatabaseStrategy = CustomDB.shared, notificationCenter: NotificationCenter = NotificationCenter.default) {
+    private init(guestRepo: GuestRepositoryProtocol = GuestRepository.shared,
+                 messageRepo: MessageRepositoryProtocol = MessageRepository.shared,
+                 db: DatabaseStrategy = CustomDB.shared,
+                 notificationCenter: NotificationCenter = NotificationCenter.default,
+                 client: ClientProtocol = WebsocketClient(),
+                 adapter: JSONAdapterProtocol = JSONAdapter()) {
         self.notificationCenter = notificationCenter
         self.guestRepo = guestRepo
         self.messageRepo = messageRepo
         self.db = db
+        self.client = client
+        self.adapter = adapter
         registerObserver(for: ChatNotification.newMessage)
+        self.client.delegate = self
     }
 
     var chatList: [ChatListModel] {
@@ -53,11 +63,23 @@ final class ChatRepository: ChatRepositoryProtocol {
     }
     
     func createMessage(with text: String, chatID: ChatID) {
-        messageRepo.createMessage(with: text, chatID: chatID)
+        let message = messageRepo.createMessage(with: text, chatID: chatID)
+        messageRepo.saveMessage(message: message)
+        // Send the message to the websocket server
+        Task {
+            if message.guestID == GlobalState.userID {
+                await sendMessage(message: message)
+            }
+        }
     }
 
     private func sendMessage(message: Message) async {
-
+        guard let data = adapter.serialize(data: message) else {
+            print("Error serialising the message")
+            return
+        }
+        await client.connect(to: GlobalState.webSocketURL)
+        await client.send(data: data)
     }
     
     private func registerObserver(for name: Notification.Name) {
@@ -70,6 +92,24 @@ final class ChatRepository: ChatRepositoryProtocol {
             return
         }
         delegate?.messageUpdated(message: message)
+    }
+    
+    //MARK: Client Delegate
+    func onReceive(data: Data) {
+        guard let message = adapter.deserialize(data: data) else {
+            print("Message is empty")
+            return
+        }
+        print("Message received:", message.content, message.date.description)
+        messageRepo.saveMessage(message: message)
+    }
+    
+    func onReceive(message: String) {
+        
+    }
+    
+    func onConnectionStatus(status: String) {
+        print("WebSocket error", status)
     }
     
     deinit {

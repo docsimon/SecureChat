@@ -9,7 +9,8 @@ import Foundation
 
 protocol MessageRepositoryProtocol {
     func getMessage(with id: MessageID) -> Message?
-    func createMessage(with text: String, chatID: ChatID)
+    func createMessage(with text: String, chatID: ChatID) -> Message
+    func saveMessage(message: Message)
 }
 
 final class MessageRepository: MessageRepositoryProtocol {
@@ -26,9 +27,12 @@ final class MessageRepository: MessageRepositoryProtocol {
         return db.getMessage(id: id)
     }
     
-    func createMessage(with text: String, chatID: ChatID)  {
+    func createMessage(with text: String, chatID: ChatID) -> Message {
         let message = Message(id: MessageID(id: UUID()), chatID: chatID, guestID: GlobalState.userID, content: text, date: Date(), ttl: 10)
-        db.saveMessage(message: message)
+        return message
     }
 
+    func saveMessage(message: Message) {
+        db.saveMessage(message: message)
+    }
 }

@@ -10,4 +10,5 @@ import SwiftUI
 @Observable
 final class GlobalState {
     static let userID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    static let webSocketURL = URL(string: "wss://echo.websocket.org")!
 }

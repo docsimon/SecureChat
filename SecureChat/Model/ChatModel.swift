@@ -8,10 +8,11 @@
 import Foundation
 
 typealias GuestID = UUID
+typealias MessageID = UUID
 
-struct MessageID: Identifiable, Equatable, Hashable, Codable {
-    let id: UUID
-}
+//struct MessageID: Identifiable, Equatable, Hashable, Codable {
+//    let id: UUID
+//}
 
 struct Chat: Equatable {
     let id: UUID

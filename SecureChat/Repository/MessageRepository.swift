@@ -28,7 +28,7 @@ final class MessageRepository: MessageRepositoryProtocol {
     }
     
     func createMessage(with text: String, chatID: ChatID) -> Message {
-        let message = Message(id: MessageID(id: UUID()), chatID: chatID, guestID: GlobalState.userID, content: text, date: Date(), ttl: 10)
+        let message = Message(id: UUID(), chatID: chatID, guestID: GlobalState.userID, content: text, date: Date(), ttl: 10)
         return message
     }
 

@@ -84,23 +84,23 @@ final class CustomDB: DatabaseStrategy {
         chatDict = [
             UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!: Chat(id: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, title: "Chat 1",
                 guests: [UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, UUID(uuidString: "987fcdeb-1234-5678-9012-34567890abcd")!],
-                messages: [MessageID(id: UUID(uuidString: "00000000-240E-4025-81E3-16B29B6333A7")!), MessageID(id: UUID(uuidString: "00000001-240E-4025-81E3-16B29B6333A7")!)],
+                messages: [UUID(uuidString: "00000000-240E-4025-81E3-16B29B6333A7")!, UUID(uuidString: "00000001-240E-4025-81E3-16B29B6333A7")!],
                 date: Date.now),
             
-            UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!: Chat(id: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, title: "Chat 2", guests: [UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!, UUID(uuidString: "6ba7b810-9dad-11d1-80b4-00c04fd430c8")!], messages: [MessageID(id: UUID(uuidString: "00000002-240E-4025-81E3-16B29B6333A7")!), MessageID(id: UUID(uuidString: "00000003-240E-4025-81E3-16B29B6333A7")!)], date: Date.now),
+            UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!: Chat(id: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, title: "Chat 2", guests: [UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!, UUID(uuidString: "6ba7b810-9dad-11d1-80b4-00c04fd430c8")!], messages: [UUID(uuidString: "00000002-240E-4025-81E3-16B29B6333A7")!, UUID(uuidString: "00000003-240E-4025-81E3-16B29B6333A7")!], date: Date.now),
             
-            UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!: Chat(id: UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!, title: "Chat3", guests: [UUID(uuidString: "f47ac10b-58cc-4372-a567-0e02b2c3d479")!, UUID(uuidString: "1b671a64-40d5-491e-99b0-da01ff1f3341")!], messages: [MessageID(id: UUID(uuidString: "00000004-240E-4025-81E3-16B29B6333A7")!), MessageID(id: UUID(uuidString: "00000005-240E-4025-81E3-16B29B6333A7")!)], date: Date.now)
+            UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!: Chat(id: UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!, title: "Chat3", guests: [UUID(uuidString: "f47ac10b-58cc-4372-a567-0e02b2c3d479")!, UUID(uuidString: "1b671a64-40d5-491e-99b0-da01ff1f3341")!], messages: [UUID(uuidString: "00000004-240E-4025-81E3-16B29B6333A7")!, UUID(uuidString: "00000005-240E-4025-81E3-16B29B6333A7")!], date: Date.now)
         ]
     }
     
     private func createMockMessages() {
         let messages = [
-            Message(id: MessageID(id: UUID(uuidString: "00000000-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, guestID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, content: "content of message 1, ciao come stai?", date: Date(), ttl: 10),
-            Message(id: MessageID(id: UUID(uuidString: "00000001-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, guestID: UUID(uuidString: "987fcdeb-1234-5678-9012-34567890abcd")!, content: "content of message 2, bene grazie, tu?", date: Date(), ttl: 10),
-            Message(id: MessageID(id: UUID(uuidString: "00000002-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, guestID: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!, content: "content of message 3", date: Date(), ttl: 10),
-            Message(id: MessageID(id: UUID(uuidString: "00000003-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, guestID: UUID(uuidString: "6ba7b810-9dad-11d1-80b4-00c04fd430c8")!, content: "content of message 4", date: Date(), ttl: 10),
-            Message(id: MessageID(id: UUID(uuidString: "00000004-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!, guestID: UUID(uuidString: "f47ac10b-58cc-4372-a567-0e02b2c3d479")!, content: "content of message 5", date: Date(), ttl: 10),
-            Message(id: MessageID(id: UUID(uuidString: "00000005-240E-4025-81E3-16B29B6333A7")!), chatID: UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!, guestID:  UUID(uuidString: "1b671a64-40d5-491e-99b0-da01ff1f3341")!, content: "content of message 6", date: Date(), ttl: 10)
+            Message(id: UUID(uuidString: "00000000-240E-4025-81E3-16B29B6333A7")!, chatID: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, guestID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, content: "content of message 1, ciao come stai?", date: Date(), ttl: 10),
+            Message(id: UUID(uuidString: "00000001-240E-4025-81E3-16B29B6333A7")!, chatID: UUID(uuidString: "578E8708-36DC-4820-86DF-4CB00A1EC8C8")!, guestID: UUID(uuidString: "987fcdeb-1234-5678-9012-34567890abcd")!, content: "content of message 2, bene grazie, tu?", date: Date(), ttl: 10),
+            Message(id: UUID(uuidString: "00000002-240E-4025-81E3-16B29B6333A7")!, chatID: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, guestID: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!, content: "content of message 3", date: Date(), ttl: 10),
+            Message(id: UUID(uuidString: "00000003-240E-4025-81E3-16B29B6333A7")!, chatID: UUID(uuidString: "CA654CF5-862E-4FDA-8856-35B67564A07B")!, guestID: UUID(uuidString: "6ba7b810-9dad-11d1-80b4-00c04fd430c8")!, content: "content of message 4", date: Date(), ttl: 10),
+            Message(id: UUID(uuidString: "00000004-240E-4025-81E3-16B29B6333A7")!, chatID: UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!, guestID: UUID(uuidString: "f47ac10b-58cc-4372-a567-0e02b2c3d479")!, content: "content of message 5", date: Date(), ttl: 10),
+            Message(id: UUID(uuidString: "00000005-240E-4025-81E3-16B29B6333A7")!, chatID: UUID(uuidString: "73B44F3D-240E-4025-81E3-16B29B6333A7")!, guestID:  UUID(uuidString: "1b671a64-40d5-491e-99b0-da01ff1f3341")!, content: "content of message 6", date: Date(), ttl: 10)
         ]
         
         for message in messages {

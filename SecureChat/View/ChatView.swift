@@ -15,8 +15,10 @@ struct ChatView: View {
        
         VStack {
             
-            List(viewModel.chat?.messages ?? []) { messageID in
-                MessageView(viewModel: MessageViewModel(message: viewModel.getMessage(from: messageID)))
+            List {
+                ForEach(viewModel.chat?.messages ?? [], id: \.self) { messageID in
+                    MessageView(viewModel: MessageViewModel(message: viewModel.getMessage(from: messageID)))
+                }
             }
             SendMessageView(viewModel: viewModel)
         }

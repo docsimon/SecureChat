@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = CA70F2A42EA3BEAA0098F0F9 /* SQLite */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		CA25061E2E8D736A004381A3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -73,6 +77,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +138,7 @@
 			);
 			name = SecureChat;
 			packageProductDependencies = (
+				CA70F2A42EA3BEAA0098F0F9 /* SQLite */,
 			);
 			productName = SecureChat;
 			productReference = CA2506102E8D7367004381A3 /* SecureChat.app */;
@@ -218,6 +224,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				CAC36C5A2E90377D00D26B15 /* XCRemoteSwiftPackageReference "swift-collections" */,
+				CA70F2A32EA3BEAA0098F0F9 /* XCRemoteSwiftPackageReference "SQLite.swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CA2506112E8D7367004381A3 /* Products */;
@@ -584,6 +591,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		CA70F2A32EA3BEAA0098F0F9 /* XCRemoteSwiftPackageReference "SQLite.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stephencelis/SQLite.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.15.4;
+			};
+		};
 		CAC36C5A2E90377D00D26B15 /* XCRemoteSwiftPackageReference "swift-collections" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-collections.git";
@@ -593,6 +608,14 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CA70F2A42EA3BEAA0098F0F9 /* SQLite */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CA70F2A32EA3BEAA0098F0F9 /* XCRemoteSwiftPackageReference "SQLite.swift" */;
+			productName = SQLite;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CA2506082E8D7367004381A3 /* Project object */;
 }

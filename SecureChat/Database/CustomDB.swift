@@ -8,7 +8,7 @@
 import Foundation
 
 final class CustomDB: DatabaseStrategy {
-
+   
     static let shared = CustomDB()
     private var guestDict = [GuestID: Guest]()
     private var chatDict = [ChatID: Chat]()
@@ -63,6 +63,10 @@ final class CustomDB: DatabaseStrategy {
             .map { $0.1 }
             .map { ChatListModel(chatID: $0.id, title: $0.title, date: $0.date)}
         return chatList
+    }
+    
+    func bootstrap() throws {
+        
     }
     
     private func createMockGuests() {

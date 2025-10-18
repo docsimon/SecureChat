@@ -20,11 +20,11 @@ final class SCLogger {
         }
 
         func info(message: String, category: LogCategory) {
-            osLogger.info("[\(category.rawValue)] \(message)")
+            osLogger.info("[INFO] [\(category.rawValue)] \(message)")
         }
 
         func error(message: String, error: Error? = nil, category: LogCategory) {
-            osLogger.error("[\(category.rawValue)] \(message) \(error)")
+            osLogger.error("[ERROR] [\(category.rawValue)] \(message) \(error)")
         }
 }
 
@@ -36,4 +36,7 @@ enum LogCategory: String {
 struct LogMessage {
     static let infoDB = "Database created correctly"
     static let errorDB = "Failed to create the Database"
+    static let errorTables = "Number of tables doesn't match the required number. DB inconsistent"
+    static let dbDeleted = "Database deleted"
+    static let dbNotDeleted = "Database NOT deleted!!!"
 }

@@ -15,4 +15,5 @@ protocol DatabaseStrategy {
     func getGuest(id: GuestID) -> Guest?
     func getChat(id: ChatID) -> Chat?
     var chatList: [ChatListModel] { get }
+    func bootstrap() throws
 }

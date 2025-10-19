@@ -9,10 +9,11 @@ import SwiftUI
 
 @main
 struct SecureChatApp: App {
+    let dep = DependencyManager.shared
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(chatListViewModel: dep.makeChatListViewModel())
         }
     }
 }

@@ -19,6 +19,7 @@ final class SQLiteDB: DatabaseStrategy {
         self.path = path
         self.db = try SQLiteDB.createDB(with: path)
         self.schema = schema
+        createTablesIfNeeded(db: db)
     }
 
     private static func createDB(with path: String) throws -> Connection {
@@ -33,7 +34,7 @@ final class SQLiteDB: DatabaseStrategy {
             try schema.createChatTable(db: db)
             try schema.createChatGuestJointTable(db: db)
             try schema.createMessageTable(db: db)
-            SCLogger.logger.info(message: LogMessage.SQLiteTableCreated, category: .Database)
+            //SCLogger.logger.info(message: LogMessage.SQLiteTableCreated, category: .Database)
         } catch {
             SCLogger.logger.error(message: LogMessage.SQLiteTableError, error: error, category: .Database)
         }

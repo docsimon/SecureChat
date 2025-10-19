@@ -8,7 +8,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State var chatListViewModel = ChatListViewModel()
+    
+    @State var chatListViewModel: ChatListViewModelProtocol
     
     var body: some View {
         NavigationStack {
@@ -26,5 +27,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(chatListViewModel: ChatListViewModel())
 }

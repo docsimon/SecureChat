@@ -9,14 +9,14 @@ import Foundation
 
 final class DependencyManager {
     
+    static let shared = DependencyManager()
+    
     let chatRepo: ChatRepositoryProtocol
     let guestRepo: GuestRepositoryProtocol
     let messageRepo: MessageRepositoryProtocol
     private var db: DatabaseStrategy
     let client: ClientProtocol
-    
-    
-    
+
     init() {
         do {
             self.db = try SQLiteDB()
@@ -37,5 +37,17 @@ final class DependencyManager {
         messageRepo = MessageRepository(db: db)
         // ChatRepository
         chatRepo = ChatRepository(guestRepo: guestRepo, messageRepo: messageRepo, db: db, notificationCenter: notificationCenter, client: client, adapter: adapter)
+    }
+    
+    func makeChatListViewModel() -> ChatListViewModel {
+        return ChatListViewModel(chatRepo: chatRepo)
+    }
+    
+    func makeChatViewModel(with id: ChatID) -> ChatViewModel {
+        return ChatViewModel(chatID: id)
+    }
+    
+    func makeMessageViewModel(for message: Message) -> MessageViewModel {
+        return MessageViewModel(message: message, guestRepo: guestRepo)
     }
 }

@@ -39,4 +39,8 @@ struct LogMessage {
     static let errorTables = "Number of tables doesn't match the required number. DB inconsistent"
     static let dbDeleted = "Database deleted"
     static let dbNotDeleted = "Database NOT deleted!!!"
+    static let SQLiteTableCreated = "SQLite tables have been created!"
+    static let SQLiteTableError = "Error while creating SQLite tables"
+    static let SQLiteDBCreated = "SQLite DB created!"
+    static let SQLiteDBNotCreated = "Error creating SQLite DB!"
 }

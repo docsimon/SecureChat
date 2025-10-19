@@ -22,12 +22,6 @@ final class MessageRepository: MessageRepositoryProtocol {
     
     private init(db: DatabaseStrategy = CustomDB.shared) {
         self.db = db
-//        do {
-//            let sqliteDB = try SQLiteDB()
-//            SCLogger.logger.info(message: LogMessage.infoDB, category: .Database)
-//        } catch {
-//            SCLogger.logger.error(message: LogMessage.errorDB, error: error, category: .Database)
-//        }
     }
     
     func getMessage(with id: MessageID) -> Message? {

@@ -20,7 +20,7 @@ final class MessageRepository: MessageRepositoryProtocol {
     
     private let db: DatabaseStrategy
     
-    private init(db: DatabaseStrategy = CustomDB.shared) {
+    init(db: DatabaseStrategy = CustomDB.shared) {
         self.db = db
     }
     

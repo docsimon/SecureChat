@@ -20,7 +20,7 @@ final class GuestRepository: GuestRepositoryProtocol {
         return db.getGuest(id: id)
     }
     
-    private init(db: DatabaseStrategy = CustomDB.shared) {
+    init(db: DatabaseStrategy = CustomDB.shared) {
         self.db = db
     }
 

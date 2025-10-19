@@ -15,7 +15,7 @@ final class CustomDB: DatabaseStrategy {
     private var messageDict = [MessageID: Message]()
     private let notificationCenter: NotificationCenter
     
-    private init(notificationCenter: NotificationCenter = NotificationCenter.default) {
+    init(notificationCenter: NotificationCenter = NotificationCenter.default) {
         self.notificationCenter = notificationCenter
         createMockGuests()
         createMockChats()

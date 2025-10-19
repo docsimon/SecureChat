@@ -31,7 +31,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     
     static let shared = ChatRepository()
     
-    private init(guestRepo: GuestRepositoryProtocol = GuestRepository.shared,
+    init(guestRepo: GuestRepositoryProtocol = GuestRepository.shared,
                  messageRepo: MessageRepositoryProtocol = MessageRepository.shared,
                  db: DatabaseStrategy = CustomDB.shared,
                  notificationCenter: NotificationCenter = NotificationCenter.default,

@@ -14,6 +14,7 @@ final class SQLiteDB: DatabaseStrategy {
     private let path: String
     private let schema: SQLiteSchemaProtocol
     
+    
     init(path: String = SQLiteConstants.sqlPath, schema: SQLiteSchemaProtocol = SQLiteSchema()) throws {
         self.path = path
         self.db = try SQLiteDB.createDB(with: path)

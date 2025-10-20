@@ -22,6 +22,17 @@ struct ContentView: View {
             .navigationDestination(for: UUID.self) { chatID in
                 ChatView(viewModel: ChatViewModel(chatID: chatID))
             }
+            .toolbar {
+                // MARK: Leading (left) button
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: {
+                        chatListViewModel.createChat(title: "Simone secret chat")
+                    }) {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Menu")
+                }
+            }
         }
     }
 }

@@ -16,4 +16,5 @@ protocol DatabaseStrategy {
     func getChat(id: ChatID) -> Chat?
     var chatList: [ChatListModel] { get }
     func bootstrap() throws
+    func createChat(title: String)
 }

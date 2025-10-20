@@ -8,7 +8,8 @@
 import SwiftUI
 
 protocol ChatListViewModelProtocol {
-    var chatList: [ChatListModel] { get }
+    var chatList: [ChatListModel] { get set }
+    func createChat(title: String)
 }
 
 @Observable
@@ -16,11 +17,15 @@ final class ChatListViewModel: ChatListViewModelProtocol {
 
     let chatRepo: ChatRepositoryProtocol
     
+    
     init(chatRepo: ChatRepositoryProtocol = ChatRepository.shared) {
         self.chatRepo = chatRepo
+        chatList = chatRepo.chatList
     }
-    
-    var chatList: [ChatListModel] {
-        return chatRepo.chatList
+
+    var chatList: [ChatListModel] = []
+       
+    func createChat(title: String) {
+        chatRepo.createChat(title: title)
     }
 }

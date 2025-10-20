@@ -8,7 +8,7 @@
 import Foundation
 
 final class CustomDB: DatabaseStrategy {
-   
+
     static let shared = CustomDB()
     private var guestDict = [GuestID: Guest]()
     private var chatDict = [ChatID: Chat]()
@@ -66,6 +66,10 @@ final class CustomDB: DatabaseStrategy {
     }
     
     func bootstrap() throws {
+        
+    }
+    
+    func createChat(title: String) {
         
     }
     

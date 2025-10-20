@@ -13,6 +13,7 @@ protocol ChatRepositoryProtocol: AnyObject {
     func getChat(with id: ChatID) -> Chat?
     func createMessage(with text: String, chatID: ChatID) async
     var delegate: ChatRepositoryDelegate? { get set }
+    func createChat(title: String)
 }
 
 protocol ChatRepositoryDelegate: AnyObject {
@@ -47,6 +48,8 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
         self.client.delegate = self
     }
 
+    //MARK: ChatRepositoryProtocol
+    
     var chatList: [ChatListModel] {
         db.chatList
     }
@@ -72,7 +75,31 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
             }
         }
     }
-
+    
+    func createChat(title: String) {
+        db.createChat(title: title)
+    }
+    
+    //MARK: Client Delegate
+    func onReceive(data: Data) {
+        guard let message = adapter.deserialize(data: data) else {
+            print("Message is empty")
+            return
+        }
+        print("Message received:", message.content, message.date.description)
+        messageRepo.saveMessage(message: message)
+    }
+    
+    func onReceive(message: String) {
+        
+    }
+    
+    func onConnectionStatus(status: String) {
+        print("WebSocket error", status)
+    }
+    
+    //MARK: Private methods
+    
     private func sendMessage(message: Message) async {
         guard let data = adapter.serialize(data: message) else {
             print("Error serialising the message")
@@ -94,23 +121,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
         delegate?.messageUpdated(message: message)
     }
     
-    //MARK: Client Delegate
-    func onReceive(data: Data) {
-        guard let message = adapter.deserialize(data: data) else {
-            print("Message is empty")
-            return
-        }
-        print("Message received:", message.content, message.date.description)
-        messageRepo.saveMessage(message: message)
-    }
-    
-    func onReceive(message: String) {
-        
-    }
-    
-    func onConnectionStatus(status: String) {
-        print("WebSocket error", status)
-    }
+    //MARK: Deinit
     
     deinit {
         notificationCenter.removeObserver(self)

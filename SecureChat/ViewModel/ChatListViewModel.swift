@@ -27,5 +27,6 @@ final class ChatListViewModel: ChatListViewModelProtocol {
        
     func createChat(title: String) {
         chatRepo.createChat(title: title)
+        chatList = chatRepo.chatList
     }
 }

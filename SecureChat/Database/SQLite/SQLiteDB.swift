@@ -58,13 +58,13 @@ final class SQLiteDB: DatabaseStrategy {
             // Update chats table
             let chats = Table("chats")
             let id = SQLite.Expression<UUID>("id")
-            let title = SQLite.Expression<String>("title")
+            let row_title = SQLite.Expression<String>("title")
             let date = SQLite.Expression<Date>("date")
             let chatIdentifier = UUID()
             
             let addChatQuery = chats.insert(
                 id <- chatIdentifier,
-                title <- title,
+                row_title <- title,
                 date <- Date()
             )
             

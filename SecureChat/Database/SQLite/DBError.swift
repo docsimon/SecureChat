@@ -8,4 +8,6 @@
 enum DBError: Error {
     case ownerIDNotFound
     case userNotFound
+    case messageNotFound
+    case chatNotFound
 }

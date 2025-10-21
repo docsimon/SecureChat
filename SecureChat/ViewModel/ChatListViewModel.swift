@@ -18,7 +18,7 @@ final class ChatListViewModel: ChatListViewModelProtocol {
     let chatRepo: ChatRepositoryProtocol
     
     
-    init(chatRepo: ChatRepositoryProtocol = ChatRepository.shared) {
+    init(chatRepo: ChatRepositoryProtocol) {
         self.chatRepo = chatRepo
         chatList = chatRepo.chatList
     }

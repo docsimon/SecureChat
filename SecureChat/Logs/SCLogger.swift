@@ -31,6 +31,7 @@ final class SCLogger {
 enum LogCategory: String {
     case Database = "Database"
     case Network = "Network"
+    case Message = "Message"
 }
 
 struct LogMessage {

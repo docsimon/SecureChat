@@ -19,30 +19,29 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
 
     let chatID: UUID
     let repo: ChatRepositoryProtocol
-    private var newChat: Chat?
+    var chat: Chat?
     
-    init(repository: ChatRepositoryProtocol = ChatRepository.shared, chatID: ChatID) {
+    init(repository: ChatRepositoryProtocol, chatID: ChatID) {
         self.chatID = chatID
         self.repo = repository
         self.repo.delegate = self
-        newChat = repo.getChat(with: chatID)
+        chat = repo.getChat(with: chatID)
     }
     
-    var chat: Chat? {
-        get {
-            newChat
-        }
-        set {
-            newChat = newValue
-        }
-    }
+//    var chat: Chat? {
+//        get {
+//            newChat
+//        }
+//        set {
+//            newChat = newValue
+//        }
+//    }
     
     func getMessage(from id: MessageID) -> Message {
         return repo.getMessage(from: id)
     }
     
     func createMessage(with text: String) async {
-        print("Message sent!", text)
         await repo.createMessage(with: text, chatID: chatID)
     }
     
@@ -53,6 +52,6 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
         
         // logic to update the chat view
         print("There is a new message")
-        newChat = repo.getChat(with: chatID)
+        chat = repo.getChat(with: chatID)
     }
 }

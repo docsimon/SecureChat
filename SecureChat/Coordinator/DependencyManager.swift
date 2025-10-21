@@ -44,10 +44,15 @@ final class DependencyManager {
     }
     
     func makeChatViewModel(with id: ChatID) -> ChatViewModel {
-        return ChatViewModel(chatID: id)
+        return ChatViewModel(repository: chatRepo, chatID: id)
     }
     
     func makeMessageViewModel(for message: Message) -> MessageViewModel {
+        return MessageViewModel(message: message, guestRepo: guestRepo)
+    }
+    
+    func makeMessageViewModel(from id: MessageID) -> MessageViewModel {
+        let message = chatRepo.getMessage(from: id)
         return MessageViewModel(message: message, guestRepo: guestRepo)
     }
 }

@@ -73,6 +73,11 @@ final class CustomDB: DatabaseStrategy {
         
     }
     
+    func getOwner() throws -> UUID {
+        return UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    }
+
+    
     private func createMockGuests() {
         let guests = [
         Guest(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, username: "Simone"),

@@ -102,7 +102,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         let messages = Table("messages")
         let id = SQLite.Expression<MessageID>("id")
         let chatID = SQLite.Expression<ChatID>("chatID")
-        let guestID = SQLite.Expression<GuestID>("guestID")
+        let guestID = SQLite.Expression<GuestID>("guestID") // sender
         let content = SQLite.Expression<String>("content")
         let date = SQLite.Expression<Date>("date")
         let ttl = SQLite.Expression<Int>("ttl")

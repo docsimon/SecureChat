@@ -13,7 +13,7 @@ struct SecureChatApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView(chatListViewModel: dep.makeChatListViewModel())
+            ContentView(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
         }
     }
 }

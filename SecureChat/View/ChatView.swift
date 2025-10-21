@@ -10,6 +10,7 @@ import SwiftUI
 struct ChatView: View {
     
     @State var viewModel: ChatViewModelProtocol
+    @State var dep: DependencyManager
     
     var body: some View {
        
@@ -17,11 +18,14 @@ struct ChatView: View {
             
             List {
                 ForEach(viewModel.chat?.messages ?? [], id: \.self) { messageID in
-                    MessageView(viewModel: MessageViewModel(message: viewModel.getMessage(from: messageID)))
+                    let messageViewModel = dep.makeMessageViewModel(from: messageID)
+                    MessageView(viewModel: messageViewModel)
                 }
             }
             SendMessageView(viewModel: viewModel)
+                .onAppear {
+                    print("Chat id:", viewModel.chat?.id)
+                }
         }
     }
 }
-

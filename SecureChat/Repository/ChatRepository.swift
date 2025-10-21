@@ -30,10 +30,10 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     private let client: ClientProtocol
     private let adapter: JSONAdapterProtocol
     
-    static let shared = ChatRepository()
+    //static let shared = ChatRepository()
     
-    init(guestRepo: GuestRepositoryProtocol = GuestRepository.shared,
-                 messageRepo: MessageRepositoryProtocol = MessageRepository.shared,
+    init(guestRepo: GuestRepositoryProtocol,
+                 messageRepo: MessageRepositoryProtocol,
                  db: DatabaseStrategy = CustomDB.shared,
                  notificationCenter: NotificationCenter = NotificationCenter.default,
                  client: ClientProtocol = WebsocketClient(),
@@ -70,9 +70,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
         messageRepo.saveMessage(message: message)
         // Send the message to the websocket server
         Task {
-            if message.guestID == GlobalState.userID {
-                await sendMessage(message: message)
-            }
+            await sendMessage(message: message)
         }
     }
     

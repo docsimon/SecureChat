@@ -16,11 +16,11 @@ protocol MessageRepositoryProtocol {
 
 final class MessageRepository: MessageRepositoryProtocol {
     
-    static let shared = MessageRepository()
+    //static let shared = MessageRepository()
     
     private let db: DatabaseStrategy
     
-    init(db: DatabaseStrategy = CustomDB.shared) {
+    init(db: DatabaseStrategy) {
         self.db = db
     }
     
@@ -29,8 +29,15 @@ final class MessageRepository: MessageRepositoryProtocol {
     }
     
     func createMessage(with text: String, chatID: ChatID) -> Message {
-        let message = Message(id: UUID(), chatID: chatID, guestID: GlobalState.userID, content: text, date: Date(), ttl: 10)
-        return message
+        do {
+            let sender = try db.getOwner()
+            let message = Message(id: UUID(), chatID: chatID, guestID: sender, content: text, date: Date(), ttl: 10)
+            return message
+             
+        } catch {
+            SCLogger.logger.error(message: "Error creating the message", error: error, category: .Message)
+            fatalError()
+        }
     }
 
     func saveMessage(message: Message) {

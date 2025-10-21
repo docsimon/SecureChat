@@ -17,4 +17,5 @@ protocol DatabaseStrategy {
     var chatList: [ChatListModel] { get }
     func bootstrap() throws
     func createChat(title: String)
+    func getOwner() throws -> UUID
 }

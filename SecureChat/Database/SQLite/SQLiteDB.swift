@@ -13,12 +13,14 @@ final class SQLiteDB: DatabaseStrategy {
     private let db: Connection
     private let path: String
     private let schema: SQLiteSchemaProtocol
+    private let notificationCenter: NotificationCenter
     
     
-    init(path: String = SQLiteConstants.sqlPath, schema: SQLiteSchemaProtocol = SQLiteSchema()) throws {
+    init(path: String = SQLiteConstants.sqlPath, schema: SQLiteSchemaProtocol = SQLiteSchema(), notificationCenter: NotificationCenter = NotificationCenter.default) throws {
         self.path = path
         self.db = try SQLiteDB.createDB(with: path)
         self.schema = schema
+        self.notificationCenter = notificationCenter
         createTablesIfNeeded(db: db)
         chatList = try fetchChatList()
     }
@@ -34,10 +36,55 @@ final class SQLiteDB: DatabaseStrategy {
     }
     
     func saveMessage(message: Message) {
-        
+        do {
+            // Update messages table
+            let messagesTable = Table("messages")
+            let id = SQLite.Expression<MessageID>("id")
+            let chatID = SQLite.Expression<ChatID>("chatID")
+            let guestID = SQLite.Expression<GuestID>("guestID") // sender
+            let content = SQLite.Expression<String>("content")
+            let date = SQLite.Expression<Date>("date")
+            let ttl = SQLite.Expression<Int>("ttl")
+            
+            let addMessageQuery = messagesTable.insert(
+                id <- message.id,
+                chatID <- message.chatID,
+                guestID <- message.guestID,
+                content <- message.content,
+                date <- message.date,
+                ttl <- message.ttl
+            )
+            
+            try db.run(addMessageQuery)
+            SCLogger.logger.info(message: "Message record created!", category: .Database)
+            notificationCenter.post(Notification(name: ChatNotification.newMessage, object: message))
+
+        } catch {
+            SCLogger.logger.error(message: "Error creating message record:", error: error, category: .Database)
+        }
     }
     
     func getMessage(id: MessageID) -> Message? {
+        do {
+            // Update messages table
+            let messagesTable = Table("messages")
+            let m_id = SQLite.Expression<MessageID>("id")
+            let chatID = SQLite.Expression<ChatID>("chatID")
+            let guestID = SQLite.Expression<GuestID>("guestID") // sender
+            let content = SQLite.Expression<String>("content")
+            let date = SQLite.Expression<Date>("date")
+            let ttl = SQLite.Expression<Int>("ttl")
+            
+            if let row = try db.pluck(messagesTable.filter(m_id == id)) {
+                return Message(id: row[m_id], chatID: row[chatID], guestID: row[guestID], content: row[content], date: row[date], ttl: row[ttl])
+            } else {
+                SCLogger.logger.error(message: "Message not found", category: .Message)
+            }
+            
+        } catch {
+            SCLogger.logger.error(message: "Error fetching the message:", error: error, category: .Database)
+        }
+    
         return nil
     }
     
@@ -46,9 +93,14 @@ final class SQLiteDB: DatabaseStrategy {
     }
     
     func getChat(id: ChatID) -> Chat? {
+        do {
+            return try fetchSingleChat(chatID: id)
+        } catch {
+            SCLogger.logger.error(message: "Error while fetching the chat from DB", error: error, category: .Database)
+        }
         return nil
     }
-    
+
     func bootstrap() throws {
         createTablesIfNeeded(db: self.db)
     }
@@ -94,6 +146,18 @@ final class SQLiteDB: DatabaseStrategy {
         }
     }
     
+    func getOwner() throws -> UUID {
+        let guests = Table("guests")
+        let id = SQLite.Expression<UUID>("id")
+        let isOwner = SQLite.Expression<Bool>("isOwner")
+        
+        if let row = try db.pluck(guests.filter(isOwner == true)) {
+            return row[id]
+        } else {
+            throw DBError.ownerIDNotFound
+        }
+    }
+    
     var chatList: [ChatListModel] = []
        
 
@@ -119,44 +183,24 @@ final class SQLiteDB: DatabaseStrategy {
         }
     }
     
-    private func getOwner() throws -> UUID {
-        let guests = Table("guests")
-        let id = SQLite.Expression<UUID>("id")
-        let isOwner = SQLite.Expression<Bool>("isOwner")
+    private func fetchSingleChat(chatID: ChatID) throws -> Chat {
         
-        if let row = try db.pluck(guests.filter(isOwner == true)) {
-            return row[id]
-        } else {
-            throw DBError.ownerIDNotFound
+        let chatTable = Table("chats")
+        let t_id = SQLite.Expression<UUID>("id")
+        let t_title = SQLite.Expression<String>("title")
+        let t_date = SQLite.Expression<Date>("date")
+        
+        guard let row = try db.pluck(chatTable.filter(t_id == chatID)) else {
+            throw DBError.chatNotFound
         }
+        let chat_title = row[t_title]
+        let chat_id = row[t_id]
+        let chat_date = row[t_date]
+        let chat_guests = try fetchGuests(for: chatID)
+        let chat_messages = try fetchMessages(for: chatID)
+        
+        return Chat(id: chat_id, title: chat_title, guests: chat_guests, messages: chat_messages, date: chat_date)
     }
-    
-//    private func fetchSingleChat() throws -> [Chat] {
-//        
-//        let messageTable = Table("messages")
-//        let guestTable = Table("guests")
-//        let guest_id = SQLite.Expression<UUID>("id")
-//        let chatTable = Table("chats")
-//        let id = SQLite.Expression<UUID>("id")
-//        let title = SQLite.Expression<String>("title")
-//        let date = SQLite.Expression<Date>("date")
-//        
-//        var result: [Chat] = []
-//        
-//        for chat in try db.prepare(chatTable) {
-//            var guestsID = [GuestID]()
-//            for guest in try db.prepare(guestTable) {
-//                guestsID.append(guest[id])
-//            }
-//            
-//            let newChat = Chat(id: chat[id], title: chat[title], guests: guestsID, messages: [], date: chat[date])
-//            
-//            result.append(newChat)
-//            
-//        }
-//        
-//        return result
-//    }
     
     private func fetchChatList() throws -> [ChatListModel] {
         
@@ -170,6 +214,35 @@ final class SQLiteDB: DatabaseStrategy {
         for chat in try db.prepare(chatTable) {
            let chatList = ChatListModel(chatID: chat[id], title: chat[title], date: chat[date])
             result.append(chatList)
+        }
+        
+        return result
+    }
+    
+    private func fetchGuests(for chatID: ChatID) throws -> [GuestID] {
+        
+        let chatGuestsTable = Table("chat_guests")
+        let t_chatID = Expression<ChatID>("chatID")
+        let t_guestID = Expression<GuestID>("guestID")
+
+        let query = chatGuestsTable.filter(t_chatID == chatID).select(t_guestID)
+        
+        let result = try db.prepare(query).map { row in
+            try row.get(t_guestID)
+        }
+        
+        return result
+    }
+    
+    private func fetchMessages(for chatID: ChatID) throws -> [MessageID] {
+        let messagesTable = Table("messages")
+        let t_chatID = Expression<ChatID>("chatID")
+        let t_messageID = Expression<MessageID>("id")
+        
+        let query = messagesTable.filter(t_chatID == chatID)
+        
+        let result = try db.prepare(query).map { row in
+            try row.get(t_messageID)
         }
         
         return result

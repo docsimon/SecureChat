@@ -44,4 +44,6 @@ struct LogMessage {
     static let SQLiteTableError = "Error while creating SQLite tables"
     static let SQLiteDBCreated = "SQLite DB created!"
     static let SQLiteDBNotCreated = "Error creating SQLite DB!"
+    // Websocket
+    static let WebSocketDisconnected = "WebSocket disconnetted!"
 }

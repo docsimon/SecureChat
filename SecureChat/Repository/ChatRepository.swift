@@ -7,6 +7,8 @@
 
 import Foundation
 
+// this protocol must be AnyObject because of the delegate that has to be a class
+// otherwise I will use a copy of the repo
 protocol ChatRepositoryProtocol: AnyObject {
     var chatList: [ChatListModel] { get }
     func getMessage(from id: MessageID) -> Message
@@ -56,6 +58,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     
     func getMessage(from id: MessageID) -> Message {
         guard let message = messageRepo.getMessage(with: id) else {
+            // TODO: use Logger instead of print
             fatalError("Message cannot be nil")
         }
         return message
@@ -81,11 +84,20 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     //MARK: Client Delegate
     func onReceive(data: Data) {
         guard let message = adapter.deserialize(data: data) else {
-            print("Message is empty")
+            SCLogger.logger.info(message: "Message is empty", category: .Message)
             return
         }
+       
         print("Message received:", message.content, message.date.description)
-        messageRepo.saveMessage(message: message)
+        SCLogger.logger.info(message: "Message received: \(message.content) \(message.date.description)", category: .Message)
+        
+        /// *************************
+        // DO NOT USE IN PRODUCTION
+        /// *************************
+        let msg = _updateMessage(message: message)
+        /// *************************
+        
+        messageRepo.saveMessage(message: msg)
     }
     
     func onReceive(message: String) {
@@ -93,14 +105,15 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     }
     
     func onConnectionStatus(status: String) {
-        print("WebSocket error", status)
+        // TODO: use Logger instead of print
+        SCLogger.logger.info(message: "WebSocket disocnnected: \(status)", category: .Network)
     }
     
     //MARK: Private methods
     
     private func sendMessage(message: Message) async {
         guard let data = adapter.serialize(data: message) else {
-            print("Error serialising the message")
+            SCLogger.logger.error(message: "Error serialising the message", category: .Message)
             return
         }
         await client.connect(to: GlobalState.webSocketURL)
@@ -111,9 +124,18 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
         notificationCenter.addObserver(self, selector: #selector(updateChat), name: name, object: nil)
     }
     
+    /// *************************
+    // DO NOT USE IN PRODUCTION
+    /// *************************
+    // This function changes the message replied by the socket echo server
+    private func _updateMessage(message: Message) -> Message {
+        return Message(id: UUID(), chatID: message.chatID, guestID: UUID(), isOwner: false, content: message.content, date: message.date, ttl: message.ttl)
+    }
+    
+    
     @objc private func updateChat(_ notification: Notification) {
         guard let message = notification.object as? Message else {
-            print("Message is empty!!!")
+            SCLogger.logger.info(message: "Message empty!", category: .Message)
             return
         }
         delegate?.messageUpdated(message: message)

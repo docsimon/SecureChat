@@ -24,7 +24,7 @@ struct ChatView: View {
             }
             SendMessageView(viewModel: viewModel)
                 .onAppear {
-                    print("Chat id:", viewModel.chat?.id)
+                    SCLogger.logger.info(message: "Chat id: \(viewModel.chat?.id)", category: .Message)
                 }
         }
     }

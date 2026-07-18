@@ -22,7 +22,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         
         // Check if table guests exists, otherwise return
         guard !doesTableExist(db: db, table: "guests") else {
-            SCLogger.logger.info(message: "Guests table already exists! ", category: .Database)
+            SCLogger.logger.info(message: "Guests table already exists!", category: .Database)
             return
         }
         
@@ -106,6 +106,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         let content = SQLite.Expression<String>("content")
         let date = SQLite.Expression<Date>("date")
         let ttl = SQLite.Expression<Int>("ttl")
+        let isOwner = SQLite.Expression<Bool>("isOwner")
         
         try db.run(messages.create { t in
             t.column(id, primaryKey: true)
@@ -114,6 +115,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
             t.column(content)
             t.column(date)
             t.column(ttl)
+            t.column(isOwner)
         })
         
         SCLogger.logger.info(message: "Messages table created!", category: .Database)

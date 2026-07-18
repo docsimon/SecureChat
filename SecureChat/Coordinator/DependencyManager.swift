@@ -20,6 +20,7 @@ final class DependencyManager {
     init() {
         do {
             self.db = try SQLiteDB()
+            SCLogger.logger.info(message: LogMessage.SQLiteDBCreated, category: .Database)
         } catch {
             self.db = CustomDB()
             SCLogger.logger.error(message: LogMessage.SQLiteDBNotCreated, error: error, category: .Database)
@@ -27,7 +28,6 @@ final class DependencyManager {
         
         let session = URLSession.shared
         let notificationCenter = NotificationCenter.default
-        SCLogger.logger.info(message: LogMessage.SQLiteDBCreated, category: .Database)
         client = WebsocketClient()
         let adapter = JSONAdapter()
         

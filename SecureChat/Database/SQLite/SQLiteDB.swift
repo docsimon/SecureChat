@@ -45,6 +45,7 @@ final class SQLiteDB: DatabaseStrategy {
             let content = SQLite.Expression<String>("content")
             let date = SQLite.Expression<Date>("date")
             let ttl = SQLite.Expression<Int>("ttl")
+            let isOwner = SQLite.Expression<Bool>("isOwner")
             
             let addMessageQuery = messagesTable.insert(
                 id <- message.id,
@@ -52,7 +53,8 @@ final class SQLiteDB: DatabaseStrategy {
                 guestID <- message.guestID,
                 content <- message.content,
                 date <- message.date,
-                ttl <- message.ttl
+                ttl <- message.ttl,
+                isOwner <- message.isOwner
             )
             
             try db.run(addMessageQuery)
@@ -74,9 +76,10 @@ final class SQLiteDB: DatabaseStrategy {
             let content = SQLite.Expression<String>("content")
             let date = SQLite.Expression<Date>("date")
             let ttl = SQLite.Expression<Int>("ttl")
+            let isOwner = SQLite.Expression<Bool>("isOwner")
             
             if let row = try db.pluck(messagesTable.filter(m_id == id)) {
-                return Message(id: row[m_id], chatID: row[chatID], guestID: row[guestID], content: row[content], date: row[date], ttl: row[ttl])
+                return Message(id: row[m_id], chatID: row[chatID], guestID: row[guestID], isOwner: row[isOwner], content: row[content], date: row[date], ttl: row[ttl])
             } else {
                 SCLogger.logger.error(message: "Message not found", category: .Message)
             }
@@ -246,5 +249,17 @@ final class SQLiteDB: DatabaseStrategy {
         }
         
         return result
+    }
+    
+    // query db to check if owner is the sender
+    private func checkOwner(with id: UUID) -> Bool {
+        do {
+            let owner = try getOwner() // gets the owner of the app (who is the one that sends the messages)
+            return owner == id
+        } catch {
+            SCLogger.logger.error(message: "Owner not found!", error: error, category: .Database)
+            fatalError("Owner not found! App state inconsitent, can't go further")
+        }
+        
     }
 }

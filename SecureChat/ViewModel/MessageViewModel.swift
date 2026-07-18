@@ -11,10 +11,16 @@ protocol MessageViewModelProtocol {
     var content: String { get }
     var time: String { get }
     var guest: String { get }
+    var isOwner: Bool { get }
     func create(content: String) -> Message?
 }
 
 final class MessageViewModel: MessageViewModelProtocol {
+    
+    var isOwner: Bool {
+        return message.isOwner
+    }
+    
     func create(content: String) -> Message? {
         nil
     }

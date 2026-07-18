@@ -17,7 +17,6 @@ final class ChatListViewModel: ChatListViewModelProtocol {
 
     let chatRepo: ChatRepositoryProtocol
     
-    
     init(chatRepo: ChatRepositoryProtocol) {
         self.chatRepo = chatRepo
         chatList = chatRepo.chatList
@@ -27,6 +26,8 @@ final class ChatListViewModel: ChatListViewModelProtocol {
        
     func createChat(title: String) {
         chatRepo.createChat(title: title)
+        // chatList must be assigned a value to trigger SwiftUI state invalidation
+        // and allowing to update the chat list
         chatList = chatRepo.chatList
     }
 }

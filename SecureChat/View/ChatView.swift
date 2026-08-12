@@ -17,13 +17,20 @@ struct ChatView: View {
     var body: some View {
         VStack {
             ScrollViewReader { proxy in
-                List {
-                    ForEach(messageIDs, id: \.self) { messageID in
-                        MessageView(viewModel: dep.makeMessageViewModel(from: messageID))
-                            .id(messageID)
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(messageIDs, id: \.self) { messageID in
+                            MessageView(viewModel: dep.makeMessageViewModel(from: messageID))
+                                .id(messageID)
+                        }
                     }
+                    .padding(.horizontal)
                 }
-                .defaultScrollAnchor(.bottom)          // iOS 17+
+                .defaultScrollAnchor(.bottom)
+                .task(id: viewModel.chat?.id) {
+                    await Task.yield()
+                    scrollToBottom(proxy, animated: false)   // correct after rows measure
+                }
                 .onChange(of: messageIDs.count) {
                     scrollToBottom(proxy, animated: true)
                 }

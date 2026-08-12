@@ -21,11 +21,13 @@ struct SendMessageView: View {
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .focused($isTextFieldFocused)
                 .submitLabel(.send)
-               
+            
             
             Button {
-               Task {
-                   await viewModel.createMessage(with: inputText)
+                let text = inputText
+                inputText = ""
+                Task {
+                    await viewModel.createMessage(with: text)
                 }
             } label: {
                 Image(systemName: "paperplane.fill")

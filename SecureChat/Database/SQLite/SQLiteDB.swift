@@ -112,8 +112,18 @@ final class SQLiteDB: DatabaseStrategy {
         return nil
     }
     
-    func getGuest(id: GuestID) -> Guest? {
-        return nil
+    func getGuest(id: GuestID) throws -> Guest {
+        
+        guard let row = try db.pluck(GuestsTable.guests.filter(GuestsTable.id == id)) else {
+            SCLogger.logger.error(message: DBError.ownerIDNotFound.localizedDescription, category: .Database)
+            throw DBError.ownerIDNotFound
+        }
+        
+        let fetchedGuest = Guest(
+            id: row[GuestsTable.id],
+            username: row[GuestsTable.username],
+            isOwner: row[GuestsTable.isOwner])
+        return fetchedGuest
     }
     
     func getChat(id: ChatID) -> Chat? {

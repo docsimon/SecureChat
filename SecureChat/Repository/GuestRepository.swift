@@ -8,22 +8,21 @@
 import Foundation
 
 protocol GuestRepositoryProtocol {
-    func getGuest(id: UUID) -> Guest?
+    func getGuest(id: UUID) throws -> Guest
     func addGuest(username: String, id: UUID)
 }
 
 final class GuestRepository: GuestRepositoryProtocol {
     
-    static let shared = GuestRepository()
     let db: DatabaseStrategy
 
-    func getGuest(id: UUID) -> Guest? {
-        return db.getGuest(id: id)
+    func getGuest(id: UUID) throws -> Guest {
+        return try db.getGuest(id: id)
     }
     
     func addGuest(username: String, id: UUID) {
-        let newGUest = Guest(id: id, username: username)
-        db.addGuest(guest: newGUest)
+        let newGuest = Guest(id: id, username: username, isOwner: false)
+        db.addGuest(guest: newGuest)
     }
     
     init(db: DatabaseStrategy = CustomDB.shared) {

@@ -123,6 +123,10 @@ import Foundation
 //}
 
 final class CustomDB: DatabaseStrategy {
+    func getGuest(id: GuestID) throws -> Guest {
+        throw NSError()
+    }
+    
     func addGuest(guest: Guest) {
         
     }

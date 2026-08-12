@@ -10,5 +10,5 @@ import Foundation
 struct Guest: Equatable {
     let id: UUID
     let username: String
-    let isOwner: Bool = false
+    let isOwner: Bool
 }

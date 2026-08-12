@@ -34,7 +34,7 @@ final class MessageViewModel: MessageViewModelProtocol {
     }
     
     var guestUsername: String {
-        guard let guest = getGuest(with: message.guestID) else {
+        guard let guest = try? getGuest(with: message.guestID) else {
             SCLogger.logger.error(message: "Guest id \(message.guestID) not found", category: .Database)
             fatalError("Cannot receive a message from unknown guests")
             
@@ -63,8 +63,8 @@ final class MessageViewModel: MessageViewModelProtocol {
         return hours
     }
     
-    private func getGuest(with id: UUID) -> Guest? {
-        guestRepo.getGuest(id: id)
+    private func getGuest(with id: UUID) throws -> Guest {
+        try guestRepo.getGuest(id: id)
     }
     
 }

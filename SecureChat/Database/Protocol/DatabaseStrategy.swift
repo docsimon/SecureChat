@@ -12,7 +12,7 @@ protocol DatabaseStrategy {
     func addGuest(guest: Guest)
     func saveMessage(message: Message)
     func getMessage(id: MessageID) -> Message?
-    func getGuest(id: GuestID) -> Guest?
+    func getGuest(id: GuestID) throws -> Guest
     func getChat(id: ChatID) -> Chat?
     var chatList: [ChatListModel] { get }
     func bootstrap() throws

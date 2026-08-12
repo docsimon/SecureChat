@@ -16,33 +16,48 @@ protocol SQLiteSchemaProtocol {
     func createMessageTable(db: Connection) throws
 }
 
+
+// Tables Schema
+
+
+enum GuestsTable {
+    
+    static let name = "guests"
+    static let guests = Table(name)
+    static let id = SQLite.Expression<UUID>("id")
+    static let date = SQLite.Expression<Date>("date")
+    static let username = SQLite.Expression<String>("username")
+    static let isOwner = SQLite.Expression<Bool>("isOwner")
+}
+
 struct SQLiteSchema: SQLiteSchemaProtocol {
     
     func createGuestTable(db: Connection) throws {
         
         // Check if table guests exists, otherwise return
-        guard !doesTableExist(db: db, table: "guests") else {
+        guard !(try db.tableExists(GuestsTable.name)) else {
             SCLogger.logger.info(message: "Guests table already exists!", category: .Database)
             return
         }
         
-        let guests = Table("guests")
-        let id = SQLite.Expression<UUID>("id")
-        let date = SQLite.Expression<Date>("date")
-        let username = SQLite.Expression<String>("username")
-        let isOwner = SQLite.Expression<Bool>("isOwner")
+      
         
-        try db.run(guests.create { t in
-            t.column(id, primaryKey: true)
-            t.column(date)
-            t.column(username)
-            t.column(isOwner)
+        
+        try db.run(GuestsTable.guests.create { t in
+            t.column(GuestsTable.id, primaryKey: true)
+            t.column(GuestsTable.date)
+            t.column(GuestsTable.username)
+            t.column(GuestsTable.isOwner)
         })
         
         SCLogger.logger.info(message: "Guests table created!", category: .Database)
         
         // Add owner
-        addOwner(db: db, table: guests, tabName: "guests")
+        do {
+            try addOwner(db: db)
+        } catch {
+            SCLogger.logger.error(message: "Failer to create owner", category: .Database)
+        }
     }
     
     func createChatTable(db: Connection) throws {
@@ -136,28 +151,27 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         return true
     }
     
-    private func addOwner(db: Connection, table: Table, tabName: String) {
-        guard doesTableExist(db: db, table: tabName) else {
+    private func addOwner(db: Connection) throws {
+        
+        
+        
+        guard try db.tableExists(GuestsTable.name) else {
             return
         }
         
         do {
-            let id = SQLite.Expression<UUID>("id")
-            let username = SQLite.Expression<String>("username")
-            let isOwner = SQLite.Expression<Bool>("isOwner")
-            let date = SQLite.Expression<Date>("date")
-            
-            let ownerInsert = table.insert(
-                id <- UUID(),
-                date <- Date(),
-                username <- "Owner",
-                isOwner <- true
+           
+            let guestID = UUID()
+            let ownerInsert = GuestsTable.guests.insert(
+                GuestsTable.id <- guestID,
+                GuestsTable.date <- Date(),
+                GuestsTable.username <- "Owner",
+                GuestsTable.isOwner <- true
             
             )
             
             try db.run(ownerInsert)
-            SCLogger.logger.info(message: "Guest Owner record created!", category: .Database)
-            printUsers(db: db, table: table, tabName: tabName)
+            SCLogger.logger.info(message: "Guest Owner record created! \(guestID)", category: .Database)
             
         } catch {
             SCLogger.logger.error(message: "Error creating Guest Owner record:", error: error, category: .Database)
@@ -182,5 +196,16 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         } catch {
             SCLogger.logger.error(message: "Error fetching users from guests:", error: error, category: .Database)
         }
+    }
+}
+
+
+extension Connection {
+    func tableExists(_ name: String) throws -> Bool {
+        let count = try scalar(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?",
+            name
+        ) as? Int64 ?? 0
+        return count > 0
     }
 }

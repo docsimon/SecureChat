@@ -7,22 +7,6 @@
 
 import SwiftUI
 
-//struct MessageView: View {
-//    
-//    var viewModel: MessageViewModelProtocol
-//
-//    var body: some View {
-//        VStack(alignment: .leading) {
-//            Text("[\(viewModel.guest)]")
-//            HStack(spacing: 10) {
-//                Text(viewModel.content)
-//                Spacer()
-//                Text(viewModel.time)
-//            }
-//        }
-//    }
-//}
-
 struct MessageView: View {
 
     let viewModel: MessageViewModelProtocol
@@ -34,7 +18,7 @@ struct MessageView: View {
             VStack(alignment: viewModel.isOwner ? .trailing : .leading, spacing: 3) {
                 // Sender name only for received messages
                 if !viewModel.isOwner {
-                    Text(viewModel.guest)
+                    Text(viewModel.guestUsername)
                         .font(.caption).bold()
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)

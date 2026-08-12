@@ -10,7 +10,7 @@ import Foundation
 typealias ChatID = UUID
 
 struct ChatListModel: Identifiable {
-    let id = UUID()
+    let id = UUID() // needed by the Identifiable protocol
     let chatID: ChatID
     let title: String
     let date: Date

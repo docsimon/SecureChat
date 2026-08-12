@@ -28,11 +28,13 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         
         let guests = Table("guests")
         let id = SQLite.Expression<UUID>("id")
+        let date = SQLite.Expression<Date>("date")
         let username = SQLite.Expression<String>("username")
         let isOwner = SQLite.Expression<Bool>("isOwner")
         
         try db.run(guests.create { t in
             t.column(id, primaryKey: true)
+            t.column(date)
             t.column(username)
             t.column(isOwner)
         })
@@ -143,11 +145,14 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
             let id = SQLite.Expression<UUID>("id")
             let username = SQLite.Expression<String>("username")
             let isOwner = SQLite.Expression<Bool>("isOwner")
+            let date = SQLite.Expression<Date>("date")
             
             let ownerInsert = table.insert(
                 id <- UUID(),
+                date <- Date(),
                 username <- "Owner",
                 isOwner <- true
+            
             )
             
             try db.run(ownerInsert)

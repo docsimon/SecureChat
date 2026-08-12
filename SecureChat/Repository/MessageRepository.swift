@@ -31,6 +31,7 @@ final class MessageRepository: MessageRepositoryProtocol {
     func createMessage(with text: String, chatID: ChatID) -> Message {
         do {
             let sender = try db.getOwner() // gets the owner id from the db.
+            SCLogger.logger.info(message: "Owner ID: \(sender)", category: .Message)
             let isOwner = true // the message is created only by the user
             let message = Message(id: UUID(), chatID: chatID, guestID: sender, isOwner: isOwner, content: text, date: Date(), ttl: 10)
             return message
@@ -42,6 +43,7 @@ final class MessageRepository: MessageRepositoryProtocol {
     }
 
     func saveMessage(message: Message) {
+        print("******* MODIFIED GUEST ID ******* ", message.guestID)
         db.saveMessage(message: message)
     }
 

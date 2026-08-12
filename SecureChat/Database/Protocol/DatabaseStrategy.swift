@@ -9,7 +9,7 @@ import Foundation
 
 protocol DatabaseStrategy {
     func saveChat(chat: Chat)
-    func saveGuest(guest: Guest)
+    func addGuest(guest: Guest)
     func saveMessage(message: Message)
     func getMessage(id: MessageID) -> Message?
     func getGuest(id: GuestID) -> Guest?

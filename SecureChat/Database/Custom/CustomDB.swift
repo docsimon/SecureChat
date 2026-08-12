@@ -123,6 +123,10 @@ import Foundation
 //}
 
 final class CustomDB: DatabaseStrategy {
+    func addGuest(guest: Guest) {
+        
+    }
+    
     
     static let shared = CustomDB()
     

@@ -29,10 +29,26 @@ final class WebsocketClient: ClientProtocol {
         receive()
     }
     
-    func connect(to url: URL = URL(string: "wss://echo.websocket.org")!) async {
+//    func connect(to url: URL = URL(string: "wss://echo.websocket.org")!) async {
+//        task = session.webSocketTask(with: url)
+//        task?.resume()
+//        delegate?.onConnectionStatus(status: "Connection status \(String(describing: task?.state))")
+//        receive()
+//    }
+    
+    func connect(to url: URL) async {
         task = session.webSocketTask(with: url)
         task?.resume()
-        delegate?.onConnectionStatus(status: "Connection status \(String(describing: task?.state))")
+        guard let t = task else {
+            return
+        }
+        var closingReason = ""
+        let state = t.state
+        if let reason = t.closeReason {
+            closingReason = String(data: reason, encoding: .utf8) ?? "Unknown"
+        }
+        
+        delegate?.onConnectionStatus(status: "Connection status: \(String(describing: state.rawValue)) reason: \(closingReason)")
         receive()
     }
     
@@ -50,13 +66,15 @@ final class WebsocketClient: ClientProtocol {
             case .success(let message):
                 if case .data(let data) = message {
                     self.delegate?.onReceive(data: data)
-                    print("Received message from server:", String(data: data, encoding: .utf8) ?? "No data")
+                    SCLogger.logger.info(message: "Received Data message from server: \(String(data: data, encoding: .utf8) ?? "No data")", category: .Network)
                 } else if case .string(let msg) = message {
+                    SCLogger.logger.info(message: "Received String message from server: \(msg)", category: .Network)
                     self.delegate?.onReceive(message: msg)
+                   
                 }
                 //print("Received message", message)
             case .failure(let error):
-                print("Error: ", error)
+                SCLogger.logger.error(message: "Error receiving data \(String(describing: self.task?.state))", error: error, category: .Network)
                 //self.task?.cancel()
                 //self.task = nil
                 //print("Error receiving, is task cancelled:")

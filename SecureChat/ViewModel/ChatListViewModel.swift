@@ -20,6 +20,7 @@ final class ChatListViewModel: ChatListViewModelProtocol {
     init(chatRepo: ChatRepositoryProtocol) {
         self.chatRepo = chatRepo
         chatList = chatRepo.chatList
+        
     }
 
     var chatList: [ChatListModel] = []

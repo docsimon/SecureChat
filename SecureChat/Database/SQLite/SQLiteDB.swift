@@ -31,8 +31,28 @@ final class SQLiteDB: DatabaseStrategy {
         
     }
     
-    func saveGuest(guest: Guest) {
-        
+    func addGuest(guest: Guest) {
+        do {
+            // Update messages table
+            let guestTable = Table("guests")
+            let id = SQLite.Expression<MessageID>("id")
+            let date = SQLite.Expression<Date>("date")
+            let isOwner = SQLite.Expression<Bool>("isOwner")
+            let username = SQLite.Expression<String>("username")
+            
+            let addMessageQuery = guestTable.insert(
+                id <- guest.id,
+                date <- Date(),
+                isOwner <- guest.isOwner,
+                username <- guest.username
+            )
+            
+            try db.run(addMessageQuery)
+            SCLogger.logger.info(message: "New guest record created! \(guest.username) \(guest.id)", category: .Database)
+
+        } catch {
+            SCLogger.logger.error(message: "Error creating guest record: \(guest.username) \(guest.id)", error: error, category: .Database)
+        }
     }
     
     func saveMessage(message: Message) {
@@ -59,6 +79,7 @@ final class SQLiteDB: DatabaseStrategy {
             
             try db.run(addMessageQuery)
             SCLogger.logger.info(message: "Message record created!", category: .Database)
+            // the subscriber of this message notification is ChatRepository
             notificationCenter.post(Notification(name: ChatNotification.newMessage, object: message))
 
         } catch {
@@ -255,6 +276,7 @@ final class SQLiteDB: DatabaseStrategy {
     private func checkOwner(with id: UUID) -> Bool {
         do {
             let owner = try getOwner() // gets the owner of the app (who is the one that sends the messages)
+            SCLogger.logger.info(message: "Owner id: \(owner)", category: .Database)
             return owner == id
         } catch {
             SCLogger.logger.error(message: "Owner not found!", error: error, category: .Database)

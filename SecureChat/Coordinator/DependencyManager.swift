@@ -9,8 +9,6 @@ import Foundation
 
 final class DependencyManager {
     
-    static let shared = DependencyManager()
-    
     let chatRepo: ChatRepositoryProtocol
     let guestRepo: GuestRepositoryProtocol
     let messageRepo: MessageRepositoryProtocol
@@ -26,7 +24,6 @@ final class DependencyManager {
             SCLogger.logger.error(message: LogMessage.SQLiteDBNotCreated, error: error, category: .Database)
         }
         
-        let session = URLSession.shared
         let notificationCenter = NotificationCenter.default
         client = WebsocketClient()
         let adapter = JSONAdapter()

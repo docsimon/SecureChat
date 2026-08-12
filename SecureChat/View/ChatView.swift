@@ -19,6 +19,7 @@ struct ChatView: View {
             List {
                 ForEach(viewModel.chat?.messages ?? [], id: \.self) { messageID in
                     let messageViewModel = dep.makeMessageViewModel(from: messageID)
+                   
                     MessageView(viewModel: messageViewModel)
                 }
             }

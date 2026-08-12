@@ -9,7 +9,8 @@ import SwiftUI
 
 @main
 struct SecureChatApp: App {
-    let dep = DependencyManager.shared
+    
+    let dep = DependencyManager()
     
     var body: some Scene {
         WindowGroup {

@@ -87,15 +87,16 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
             SCLogger.logger.info(message: "Message is empty", category: .Message)
             return
         }
-       
-        print("Message received:", message.content, message.date.description)
+
         SCLogger.logger.info(message: "Message received: \(message.content) \(message.date.description)", category: .Message)
         
+        #if DEBUG
         /// *************************
         // DO NOT USE IN PRODUCTION
         /// *************************
         let msg = _updateMessage(message: message)
         /// *************************
+        #endif
         
         messageRepo.saveMessage(message: msg)
     }
@@ -105,8 +106,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     }
     
     func onConnectionStatus(status: String) {
-        // TODO: use Logger instead of print
-        SCLogger.logger.info(message: "WebSocket disocnnected: \(status)", category: .Network)
+        SCLogger.logger.info(message: "WebSocket disconnected: \(status)", category: .Network)
     }
     
     //MARK: Private methods
@@ -128,9 +128,14 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     // DO NOT USE IN PRODUCTION
     /// *************************
     // This function changes the message replied by the socket echo server
-    private func _updateMessage(message: Message) -> Message {
-        return Message(id: UUID(), chatID: message.chatID, guestID: UUID(), isOwner: false, content: message.content, date: message.date, ttl: message.ttl)
-    }
+    #if DEBUG
+        private func _updateMessage(message: Message) -> Message {
+            
+            let ciccio_uuid = UUID(uuidString: "1C89AC13-7991-420D-AFF6-8E06E212613A")
+            
+            return Message(id: UUID(), chatID: message.chatID, guestID: ciccio_uuid!, isOwner: false, content: message.content, date: message.date, ttl: message.ttl)
+        }
+    #endif
     
     
     @objc private func updateChat(_ notification: Notification) {
@@ -138,6 +143,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
             SCLogger.logger.info(message: "Message empty!", category: .Message)
             return
         }
+        print("******* GUEST ID: ", message.guestID)
         delegate?.messageUpdated(message: message)
     }
     

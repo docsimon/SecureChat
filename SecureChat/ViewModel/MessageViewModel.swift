@@ -10,7 +10,7 @@ import Foundation
 protocol MessageViewModelProtocol {
     var content: String { get }
     var time: String { get }
-    var guest: String { get }
+    var guestUsername: String { get }
     var isOwner: Bool { get }
     func create(content: String) -> Message?
 }
@@ -33,10 +33,18 @@ final class MessageViewModel: MessageViewModelProtocol {
         getTime(from: message.date)
     }
     
-    var guest: String {
-        let guest = getGuest(with: message.guestID)
-        return guest?.username ?? "Unknown"
+    var guestUsername: String {
+        guard let guest = getGuest(with: message.guestID) else {
+            SCLogger.logger.error(message: "Guest id \(message.guestID) not found", category: .Database)
+            fatalError("Cannot receive a message from unknown guests")
+            
+        }
+        print("****** Guest id from the message in the chat", message.guestID)
+        print("****** Guest fetched from the message in the chat", guest.id, guest.username)
+        return guest.username
     }
+    
+   
     
     let message: Message
     let guestRepo: GuestRepositoryProtocol

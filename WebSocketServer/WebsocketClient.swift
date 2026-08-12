@@ -1,10 +1,3 @@
-//
-// WebsocketClient.swift
-// SecureChat  
-//
-// Created by Simone Barbara on 09/10/2025.                               
-// All Rights Reserved.                                                         
-
 import Foundation
 
 /// A minimal WebSocket client.

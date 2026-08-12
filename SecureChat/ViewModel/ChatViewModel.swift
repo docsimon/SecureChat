@@ -51,7 +51,6 @@ final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
         // logic to send the message
         
         // logic to update the chat view
-       
         SCLogger.logger.info(message: "There is a new message \(message.content) \(message.guestID)", category: .Message)
         chat = repo.getChat(with: chatID)
     }

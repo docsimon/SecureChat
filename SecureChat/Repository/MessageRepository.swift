@@ -43,7 +43,6 @@ final class MessageRepository: MessageRepositoryProtocol {
     }
 
     func saveMessage(message: Message) {
-        print("******* MODIFIED GUEST ID ******* ", message.guestID)
         db.saveMessage(message: message)
     }
 

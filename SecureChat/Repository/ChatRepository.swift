@@ -94,11 +94,11 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
         /// *************************
         // DO NOT USE IN PRODUCTION
         /// *************************
-        let msg = _updateMessage(message: message)
+       // let msg = _updateMessage(message: message)
         /// *************************
         #endif
         
-        messageRepo.saveMessage(message: msg)
+        messageRepo.saveMessage(message: message)
     }
     
     func onReceive(message: String) {

@@ -30,6 +30,15 @@ final class DependencyManager {
         
         // GuestRepository
         guestRepo = GuestRepository(db: db)
+        
+        
+        /* ************************** */
+        /* USE ONLY FOR TESTING USERS */
+//        #if DEBUG
+//        guestRepo.addGuest(username: "Sempronio", id: nil)
+//        #endif
+        /* ************************** */
+        
         // MessageRepository
         messageRepo = MessageRepository(db: db)
         // ChatRepository

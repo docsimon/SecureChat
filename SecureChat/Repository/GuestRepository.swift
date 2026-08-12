@@ -9,7 +9,7 @@ import Foundation
 
 protocol GuestRepositoryProtocol {
     func getGuest(id: UUID) throws -> Guest
-    func addGuest(username: String, id: UUID)
+    func addGuest(username: String, id: UUID?)
 }
 
 final class GuestRepository: GuestRepositoryProtocol {
@@ -20,8 +20,16 @@ final class GuestRepository: GuestRepositoryProtocol {
         return try db.getGuest(id: id)
     }
     
-    func addGuest(username: String, id: UUID) {
-        let newGuest = Guest(id: id, username: username, isOwner: false)
+    func addGuest(username: String, id: UUID?) {
+        
+        let guestID: UUID = {
+            guard let id = id else {
+                return UUID()
+            }
+            return id
+        }()
+
+        let newGuest = Guest(id: guestID, username: username, isOwner: false)
         db.addGuest(guest: newGuest)
     }
     

@@ -18,7 +18,7 @@ struct ContentView: View {
                 NavigationLink(value: model.chatID) {
                     ChatListRow(chatListModel: model)
                         .onAppear {
-                            print("chat id:", model.chatID)
+                            SCLogger.logger.info(message: "Available CHAT \(model.chatID)", category: .Database)
                         }
                 }
             }
@@ -26,7 +26,7 @@ struct ContentView: View {
             .navigationDestination(for: UUID.self) { chatID in
                 ChatView(viewModel: dep.makeChatViewModel(with: chatID), dep: dep)
                     .onAppear {
-                        print("chat id2:", chatID)
+                        SCLogger.logger.info(message: "Selected CHAT \(chatID)", category: .Database)
                     }
                    
             }
@@ -40,6 +40,7 @@ struct ContentView: View {
                     }
                     .accessibilityLabel("Menu")
                 }
+                
             }
         }
     }

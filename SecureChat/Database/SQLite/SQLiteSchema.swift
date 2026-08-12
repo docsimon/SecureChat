@@ -30,7 +30,40 @@ enum GuestsTable {
     static let isOwner = SQLite.Expression<Bool>("isOwner")
 }
 
+enum ChatsTable {
+    
+    static let name = "chats"
+    static let chats = Table(name)
+    static let id = SQLite.Expression<UUID>("id")
+    static let title = SQLite.Expression<String>("title")
+    static let date = SQLite.Expression<Date>("date")
+}
+
+enum ChatsGuestsTable {
+    
+    static let name = "chats_guests"
+    static let chatsGuests = Table(name)
+    static let chats = ChatsTable.chats
+    static let guests = GuestsTable.guests
+    static let chatID = Expression<ChatID>("chatID")
+    static let guestID = Expression<GuestID>("guestID")
+}
+
+enum MessagesTable {
+    static let name = "messages"
+    static let messages = Table(name)
+    static let id = SQLite.Expression<MessageID>("id")
+    static let chatID = SQLite.Expression<ChatID>("chatID")
+    static let guestID = SQLite.Expression<GuestID>("guestID") // sender
+    static let content = SQLite.Expression<String>("content")
+    static let date = SQLite.Expression<Date>("date")
+    static let ttl = SQLite.Expression<Int>("ttl")
+    static let isOwner = SQLite.Expression<Bool>("isOwner")
+}
+
 struct SQLiteSchema: SQLiteSchemaProtocol {
+    
+    //MARK: Guests Table
     
     func createGuestTable(db: Connection) throws {
         
@@ -39,9 +72,6 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
             SCLogger.logger.info(message: "Guests table already exists!", category: .Database)
             return
         }
-        
-      
-        
         
         try db.run(GuestsTable.guests.create { t in
             t.column(GuestsTable.id, primaryKey: true)
@@ -60,101 +90,74 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         }
     }
     
+    //MARK: Chats Table
+    
     func createChatTable(db: Connection) throws {
         
         // Check if table guests exists, otherwise return
-        guard !doesTableExist(db: db, table: "chats") else {
+        guard !(try db.tableExists(ChatsTable.name)) else {
             SCLogger.logger.info(message: "Chats table already exists!", category: .Database)
             return
         }
         
-        let chats = Table("chats")
-        let id = SQLite.Expression<UUID>("id")
-        let title = SQLite.Expression<String>("title")
-        let date = SQLite.Expression<Date>("date")
+       
         
-        try db.run(chats.create { t in
-            t.column(id, primaryKey: true)
-            t.column(title)
-            t.column(date)
+        try db.run(ChatsTable.chats.create { t in
+            t.column(ChatsTable.id, primaryKey: true)
+            t.column(ChatsTable.title)
+            t.column(ChatsTable.date)
         })
         
         SCLogger.logger.info(message: "Chats table created!", category: .Database)
     }
     
+    //MARK: ChatsGuests Table
+    
     func createChatGuestJointTable(db: Connection) throws {
         
         // Check if table guests exists, otherwise return
-        guard !doesTableExist(db: db, table: "chat_guests") else {
+        guard !(try db.tableExists(ChatsGuestsTable.name)) else {
             SCLogger.logger.info(message: "Chat_guests table already exists!", category: .Database)
             return
         }
         
-        let chats = Table("chats")
-        let guests = Table("guests")
-        let chatGuests = Table("chat_guests")
-        
-        let chatID = Expression<ChatID>("chatID")
-        let guestID = Expression<GuestID>("guestID")
-        
-        try db.run(chatGuests.create { t in
-            t.column(chatID)
-            t.column(guestID)
-            t.foreignKey(chatID, references: chats, chatID)
-            t.foreignKey(guestID, references: guests, guestID)
-            t.primaryKey(chatID, guestID) // Composite primary key
+        try db.run(ChatsGuestsTable.chatsGuests.create { t in
+            t.column(ChatsGuestsTable.chatID)
+            t.column(ChatsGuestsTable.guestID)
+            t.foreignKey(ChatsGuestsTable.chatID, references: ChatsGuestsTable.chats, ChatsGuestsTable.chatID)
+            t.foreignKey(ChatsGuestsTable.guestID, references: ChatsGuestsTable.guests, ChatsGuestsTable.guestID)
+            t.primaryKey(ChatsGuestsTable.chatID, ChatsGuestsTable.guestID) // Composite primary key
         })
         
         SCLogger.logger.info(message: "Chat_guests table created!", category: .Database)
     }
     
+    //MARK: Messages Table
+    
     func createMessageTable(db: Connection) throws {
 
         // Check if table guests exists, otherwise return
-        guard !doesTableExist(db: db, table: "messages") else {
+        guard !(try db.tableExists(MessagesTable.name)) else {
             SCLogger.logger.info(message: "Messages table already exists!", category: .Database)
             return
         }
         
-        let messages = Table("messages")
-        let id = SQLite.Expression<MessageID>("id")
-        let chatID = SQLite.Expression<ChatID>("chatID")
-        let guestID = SQLite.Expression<GuestID>("guestID") // sender
-        let content = SQLite.Expression<String>("content")
-        let date = SQLite.Expression<Date>("date")
-        let ttl = SQLite.Expression<Int>("ttl")
-        let isOwner = SQLite.Expression<Bool>("isOwner")
         
-        try db.run(messages.create { t in
-            t.column(id, primaryKey: true)
-            t.column(chatID)
-            t.column(guestID)
-            t.column(content)
-            t.column(date)
-            t.column(ttl)
-            t.column(isOwner)
+        try db.run(MessagesTable.messages.create { t in
+            t.column(MessagesTable.id, primaryKey: true)
+            t.column(MessagesTable.chatID)
+            t.column(MessagesTable.guestID)
+            t.column(MessagesTable.content)
+            t.column(MessagesTable.date)
+            t.column(MessagesTable.ttl)
+            t.column(MessagesTable.isOwner)
         })
         
         SCLogger.logger.info(message: "Messages table created!", category: .Database)
     }
-    
-    private func doesTableExist(db: Connection, table: String) -> Bool {
         
-        do {
-            let tableExists = try db.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='\(table)';") as? Int64 ?? 0
-            if tableExists == 0 {
-                return false
-            }
-        } catch {
-            SCLogger.logger.error(message: LogMessage.SQLiteTableError, error: error, category: .Database)
-        }
-        return true
-    }
-    
     private func addOwner(db: Connection) throws {
-        
-        
-        
+    
         guard try db.tableExists(GuestsTable.name) else {
             return
         }
@@ -177,28 +180,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
             SCLogger.logger.error(message: "Error creating Guest Owner record:", error: error, category: .Database)
         }
     }
-    
-    private func printUsers(db: Connection, table: Table, tabName: String) {
-        
-        guard doesTableExist(db: db, table: tabName) else {
-            SCLogger.logger.error(message: "Error fetching users from guests, table doesn't exist or is Empty ", category: .Database)
-            return
-        }
-    
-        do {
-            let id = SQLite.Expression<UUID>("id")
-            let username = SQLite.Expression<String>("username")
-            let isOwner = SQLite.Expression<Bool>("isOwner")
-            
-            for row in try db.prepare(table) {
-                print("id: \(row[id]), User: \(row[username]), isOwner: \(row[isOwner])")
-            }
-        } catch {
-            SCLogger.logger.error(message: "Error fetching users from guests:", error: error, category: .Database)
-        }
-    }
 }
-
 
 extension Connection {
     func tableExists(_ name: String) throws -> Bool {

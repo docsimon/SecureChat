@@ -1,0 +1,12 @@
+{
+  "users": [
+    {
+      "userID": "46C68357-F051-45D5-9A15-FB3B2AFBF5A6",
+      "phone": "+44777712345",
+      "displayName": "Ciccio",
+      "pushToken": "mock-token"
+    }
+  ],
+  "invites": [],
+  "chats": []
+}

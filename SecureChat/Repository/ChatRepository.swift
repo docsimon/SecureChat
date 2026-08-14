@@ -83,7 +83,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     
     //MARK: Client Delegate
     func onReceive(data: Data) {
-        guard let message = adapter.deserialize(data: data) else {
+        guard let message: Message = adapter.deserialize(data: data) else {
             SCLogger.logger.info(message: "Message is empty", category: .Message)
             return
         }

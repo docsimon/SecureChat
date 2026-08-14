@@ -9,7 +9,7 @@ import Foundation
 
 protocol JSONAdapterProtocol {
     func serialize(data: Codable) -> Data?
-    func deserialize(data: Data) -> Message?
+    func deserialize<T: Decodable>(data: Data) -> T?
 }
 
 struct JSONAdapter: JSONAdapterProtocol {
@@ -20,9 +20,9 @@ struct JSONAdapter: JSONAdapterProtocol {
         return encodedData
     }
     
-    func deserialize(data: Data) -> Message? {
+    func deserialize<T: Decodable>(data: Data) -> T? {
         let decoder = JSONDecoder()
-        let message = try? decoder.decode(Message.self, from: data)
+        let message = try? decoder.decode(T.self, from: data)
         return message
     }
     

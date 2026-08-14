@@ -10,10 +10,13 @@ import Foundation
 final class DependencyManager {
     
     let chatRepo: ChatRepositoryProtocol
-    let guestRepo: GuestRepositoryProtocol
+    let guestRepo: GuestRepository
     let messageRepo: MessageRepositoryProtocol
     private var db: DatabaseStrategy
     let client: ClientProtocol
+    let authService: AuthService
+    let networkAdapter: NetworkAdapter
+    let jsonAdapter: JSONAdapter
 
     init() {
         do {
@@ -29,7 +32,7 @@ final class DependencyManager {
         let adapter = JSONAdapterImpl()
         
         // GuestRepository
-        guestRepo = GuestRepository(db: db)
+        guestRepo = GuestRepositoryImpl(db: db)
         
         
         /* ************************** */
@@ -43,22 +46,33 @@ final class DependencyManager {
         messageRepo = MessageRepository(db: db)
         // ChatRepository
         chatRepo = ChatRepository(guestRepo: guestRepo, messageRepo: messageRepo, db: db, notificationCenter: notificationCenter, client: client, adapter: adapter)
+        // JSONAdapter
+        jsonAdapter = JSONAdapterImpl()
+        // NetworkAdapter
+        networkAdapter = NetworkAdapterImpl(session: URLSession.shared)
+        // AuthService
+        authService = AuthServiceImpl(networkAdapter: networkAdapter, jsonAdapter: jsonAdapter)
     }
     
-    func makeChatListViewModel() -> ChatListViewModel {
+    @MainActor func makeChatListViewModel() -> ChatListViewModel {
         return ChatListViewModel(chatRepo: chatRepo)
     }
     
-    func makeChatViewModel(with id: ChatID) -> ChatViewModel {
+    @MainActor func makeChatViewModel(with id: ChatID) -> ChatViewModel {
         return ChatViewModel(repository: chatRepo, chatID: id)
     }
     
-    func makeMessageViewModel(for message: Message) -> MessageViewModel {
+    @MainActor func makeMessageViewModel(for message: Message) -> MessageViewModel {
         return MessageViewModel(message: message, guestRepo: guestRepo)
     }
     
-    func makeMessageViewModel(from id: MessageID) -> MessageViewModel {
+    @MainActor func makeMessageViewModel(from id: MessageID) -> MessageViewModel {
         let message = chatRepo.getMessage(from: id)
         return MessageViewModel(message: message, guestRepo: guestRepo)
     }
+    
+    @MainActor func makeRegisterOwnerViewModel() -> RegisterOwnerViewModel {
+        return RegisterOwnerViewModel(guestRepo: guestRepo, authService: authService)
+    }
+    
 }

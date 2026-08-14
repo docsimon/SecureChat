@@ -7,12 +7,13 @@
 
 import Foundation
 
-protocol GuestRepositoryProtocol {
+protocol GuestRepository {
     func getGuest(id: UUID) throws -> Guest
     func addGuest(username: String, id: UUID?)
+    func getOwner() throws -> Guest
 }
 
-final class GuestRepository: GuestRepositoryProtocol {
+final class GuestRepositoryImpl: GuestRepository {
     
     let db: DatabaseStrategy
 
@@ -29,13 +30,16 @@ final class GuestRepository: GuestRepositoryProtocol {
             return id
         }()
 
-        let newGuest = Guest(id: guestID, username: username, isOwner: false)
+        let newGuest = Guest(id: guestID, username: username, isOwner: false, date: Date(), isRegistered: false)
         db.addGuest(guest: newGuest)
+    }
+    
+    func getOwner() throws -> Guest {
+        return try db.getOwner()
     }
     
     init(db: DatabaseStrategy = CustomDB.shared) {
         self.db = db
     }
 
-    
 }

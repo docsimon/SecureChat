@@ -20,14 +20,10 @@ protocol NetworkAdapter {
 }
 
 struct NetworkAdapterImpl: NetworkAdapter {
-    
-    let endpoint: Endpoint
-    let baseAddress: BaseAddress
+
     let session: URLSession
     
-    init(endpoint: Endpoint, baseAddress: BaseAddress, session: URLSession = URLSession.shared) {
-        self.endpoint = endpoint
-        self.baseAddress = baseAddress
+    init(session: URLSession = URLSession.shared) {
         self.session = session
     }
     

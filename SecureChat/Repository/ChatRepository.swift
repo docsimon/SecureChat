@@ -24,7 +24,7 @@ protocol ChatRepositoryDelegate: AnyObject {
 
 final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
 
-    let guestRepo: GuestRepositoryProtocol
+    let guestRepo: GuestRepository
     let messageRepo: MessageRepositoryProtocol
     weak var delegate: ChatRepositoryDelegate?
     private let notificationCenter: NotificationCenter
@@ -34,7 +34,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     
     //static let shared = ChatRepository()
     
-    init(guestRepo: GuestRepositoryProtocol,
+    init(guestRepo: GuestRepository,
                  messageRepo: MessageRepositoryProtocol,
                  db: DatabaseStrategy = CustomDB.shared,
                  notificationCenter: NotificationCenter = NotificationCenter.default,

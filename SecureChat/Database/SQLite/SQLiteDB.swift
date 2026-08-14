@@ -100,7 +100,10 @@ final class SQLiteDB: DatabaseStrategy {
         let fetchedGuest = Guest(
             id: row[GuestsTable.id],
             username: row[GuestsTable.username],
-            isOwner: row[GuestsTable.isOwner])
+            isOwner: row[GuestsTable.isOwner],
+            date: row[GuestsTable.date],
+            isRegistered: row[GuestsTable.isRegistered])
+        
         return fetchedGuest
     }
     
@@ -131,7 +134,7 @@ final class SQLiteDB: DatabaseStrategy {
             try db.run(addChatQuery)
             
             // update chat_guests table
-            let guestIdentifier = try getOwner()
+            let guestIdentifier = try getOwner().id
             
             let addChatGuestsQuery = ChatsGuestsTable.chatsGuests.insert (
                 ChatsGuestsTable.chatID <- chatIdentifier,
@@ -150,9 +153,9 @@ final class SQLiteDB: DatabaseStrategy {
         }
     }
     
-    func getOwner() throws -> UUID {
+    func getOwner() throws -> Guest {
         if let row = try db.pluck(GuestsTable.guests.filter(GuestsTable.isOwner)) {
-            return row[GuestsTable.id]
+            return Guest(id: row[GuestsTable.id], username: row[GuestsTable.username], isOwner: row[GuestsTable.isOwner], date: row[GuestsTable.date], isRegistered: row[GuestsTable.isRegistered])
         } else {
             throw DBError.ownerIDNotFound
         }
@@ -236,18 +239,5 @@ final class SQLiteDB: DatabaseStrategy {
         }
         
         return result
-    }
-    
-    // query db to check if owner is the sender
-    private func checkOwner(with id: UUID) -> Bool {
-        do {
-            let owner = try getOwner() // gets the owner of the app (who is the one that sends the messages)
-            SCLogger.logger.info(message: "Owner id: \(owner)", category: .Database)
-            return owner == id
-        } catch {
-            SCLogger.logger.error(message: "Owner not found!", error: error, category: .Database)
-            fatalError("Owner not found! App state inconsitent, can't go further")
-        }
-        
     }
 }

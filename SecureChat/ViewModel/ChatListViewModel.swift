@@ -12,7 +12,7 @@ protocol ChatListViewModelProtocol {
     func createChat(title: String)
 }
 
-@Observable
+@MainActor @Observable
 final class ChatListViewModel: ChatListViewModelProtocol {
 
     let chatRepo: ChatRepositoryProtocol

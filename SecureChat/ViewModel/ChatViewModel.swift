@@ -14,7 +14,7 @@ protocol ChatViewModelProtocol {
     func createMessage(with text: String) async
 }
 
-@Observable
+@MainActor @Observable
 final class ChatViewModel: ChatViewModelProtocol, ChatRepositoryDelegate {
 
     let chatID: UUID

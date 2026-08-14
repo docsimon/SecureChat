@@ -33,7 +33,7 @@ final class MessageRepository: MessageRepositoryProtocol {
             let sender = try db.getOwner() // gets the owner id from the db.
             SCLogger.logger.info(message: "Owner ID: \(sender)", category: .Message)
             let isOwner = true // the message is created only by the user
-            let message = Message(id: UUID(), chatID: chatID, guestID: sender, isOwner: isOwner, content: text, date: Date(), ttl: 10)
+            let message = Message(id: UUID(), chatID: chatID, guestID: sender.id, isOwner: isOwner, content: text, date: Date(), ttl: 10)
             return message
              
         } catch {

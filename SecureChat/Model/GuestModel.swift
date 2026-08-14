@@ -11,4 +11,6 @@ struct Guest: Equatable {
     let id: UUID
     let username: String
     let isOwner: Bool
+    let date: Date
+    let isRegistered: Bool
 }

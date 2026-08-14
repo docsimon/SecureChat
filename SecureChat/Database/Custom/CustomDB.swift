@@ -123,6 +123,10 @@ import Foundation
 //}
 
 final class CustomDB: DatabaseStrategy {
+    func getOwner() throws -> Guest {
+        return mockGuest()
+    }
+    
     func getGuest(id: GuestID) throws -> Guest {
         throw NSError()
     }
@@ -170,6 +174,12 @@ final class CustomDB: DatabaseStrategy {
     
     func getOwner() throws -> UUID {
         UUID()
+    }
+    
+    
+    private func mockGuest() -> Guest {
+        
+        return Guest(id: UUID(), username: "test", isOwner: false, date: Date(), isRegistered: false)
     }
         
 }

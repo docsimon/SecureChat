@@ -15,6 +15,7 @@ protocol MessageViewModelProtocol {
     func create(content: String) -> Message?
 }
 
+@MainActor
 final class MessageViewModel: MessageViewModelProtocol {
     
     var isOwner: Bool {
@@ -47,9 +48,9 @@ final class MessageViewModel: MessageViewModelProtocol {
    
     
     let message: Message
-    let guestRepo: GuestRepositoryProtocol
+    let guestRepo: GuestRepository
     
-    init(message: Message, guestRepo: GuestRepositoryProtocol) {
+    init(message: Message, guestRepo: GuestRepository) {
         self.message = message
         self.guestRepo = guestRepo
     }

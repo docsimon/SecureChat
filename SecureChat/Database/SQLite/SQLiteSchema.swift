@@ -28,6 +28,7 @@ enum GuestsTable {
     static let date = SQLite.Expression<Date>("date")
     static let username = SQLite.Expression<String>("username")
     static let isOwner = SQLite.Expression<Bool>("isOwner")
+    static let isRegistered = SQLite.Expression<Bool>("isRegistered") // if the owner is registered on the server. This only applies to the owner. For all th eother users this field will be always false.
 }
 
 enum ChatsTable {
@@ -78,6 +79,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
             t.column(GuestsTable.date)
             t.column(GuestsTable.username)
             t.column(GuestsTable.isOwner)
+            t.column(GuestsTable.isRegistered)
         })
         
         SCLogger.logger.info(message: "Guests table created!", category: .Database)
@@ -169,8 +171,8 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
                 GuestsTable.id <- guestID,
                 GuestsTable.date <- Date(),
                 GuestsTable.username <- "Owner",
-                GuestsTable.isOwner <- true
-            
+                GuestsTable.isOwner <- true,
+                GuestsTable.isRegistered <- false
             )
             
             try db.run(ownerInsert)

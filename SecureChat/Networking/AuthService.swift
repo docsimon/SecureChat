@@ -6,6 +6,12 @@
 //
 import Foundation
 
+/*
+ This struct manages all the interactions with the auth server
+ - registration
+ - invites
+ */
+
 protocol AuthService {
     // the user sends its own phone number, username and push notification token when registering to the auth server
     func register(data: RegistrationDTO) async throws

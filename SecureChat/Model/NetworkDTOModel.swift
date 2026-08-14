@@ -8,7 +8,8 @@
 import Foundation
 
 struct RegistrationDTO: Codable {
-    let phoneNumber: String
+    let userID: UUID
+    let phone: String
     let username: String
     let token: String //push notification token
 }

@@ -7,12 +7,13 @@
 
 import SwiftUI
 
+@MainActor 
 protocol ChatListViewModelProtocol {
     var chatList: [ChatListModel] { get set }
     func createChat(title: String)
 }
 
-@MainActor @Observable
+@Observable
 final class ChatListViewModel: ChatListViewModelProtocol {
 
     let chatRepo: ChatRepositoryProtocol

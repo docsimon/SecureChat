@@ -14,7 +14,8 @@ struct SecureChatApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
+            //ContentView(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
+            RouterView(dep: dep)
         }
     }
 }

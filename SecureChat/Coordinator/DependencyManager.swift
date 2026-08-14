@@ -26,7 +26,7 @@ final class DependencyManager {
         
         let notificationCenter = NotificationCenter.default
         client = WebsocketClient()
-        let adapter = JSONAdapter()
+        let adapter = JSONAdapterImpl()
         
         // GuestRepository
         guestRepo = GuestRepository(db: db)

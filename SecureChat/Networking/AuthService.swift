@@ -34,7 +34,7 @@ struct AuthServiceImpl: AuthService {
     
     //MARK: AuthService Protocol
     func register(data: RegistrationDTO) async throws {
-        let body = jsonAdapter.serialize(data: data)
+        let body = try jsonAdapter.serialize(data: data)
         let baseAddress = BaseAddress.baseAddressAuth.getBaseAddress()
         let endpoint = Endpoint.register.getEndpoint()
         let url = try NetworkUtilities.createURL(from: baseAddress + endpoint)

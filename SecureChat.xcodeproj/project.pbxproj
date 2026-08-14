@@ -33,30 +33,9 @@
 		CA2506272E8D736A004381A3 /* SecureChatUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SecureChatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		CAC36C582E900D0700D26B15 /* Exceptions for "SecureChat" folder in "SecureChatTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Test/Mocks/ChatRepositoryMock.swift,
-			);
-			target = CA25061C2E8D736A004381A3 /* SecureChatTests */;
-		};
-		CAC36C592E900D1500D26B15 /* Exceptions for "SecureChat" folder in "SecureChat" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Test/Mocks/ChatRepositoryMock.swift,
-			);
-			target = CA25060F2E8D7367004381A3 /* SecureChat */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CA2506122E8D7367004381A3 /* SecureChat */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				CAC36C592E900D1500D26B15 /* Exceptions for "SecureChat" folder in "SecureChat" target */,
-				CAC36C582E900D0700D26B15 /* Exceptions for "SecureChat" folder in "SecureChatTests" target */,
-			);
 			path = SecureChat;
 			sourceTree = "<group>";
 		};

@@ -30,7 +30,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     private let notificationCenter: NotificationCenter
     private var db: DatabaseStrategy
     private let client: ClientProtocol
-    private let adapter: JSONAdapterProtocol
+    private let adapter: JSONAdapter
     
     //static let shared = ChatRepository()
     
@@ -39,7 +39,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
                  db: DatabaseStrategy = CustomDB.shared,
                  notificationCenter: NotificationCenter = NotificationCenter.default,
                  client: ClientProtocol = WebsocketClient(),
-                 adapter: JSONAdapterProtocol = JSONAdapter()) {
+                 adapter: JSONAdapter = JSONAdapterImpl()) {
         self.notificationCenter = notificationCenter
         self.guestRepo = guestRepo
         self.messageRepo = messageRepo
@@ -83,22 +83,14 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     
     //MARK: Client Delegate
     func onReceive(data: Data) {
-        guard let message: Message = adapter.deserialize(data: data) else {
-            SCLogger.logger.info(message: "Message is empty", category: .Message)
-            return
+        do {
+            let message: Message = try adapter.deserialize(data: data)
+            SCLogger.logger.info(message: "Message received: \(message.content) \(message.date.description)", category: .Message)
+            messageRepo.saveMessage(message: message)
+        } catch {
+            SCLogger.logger.error(message: "Error message", error: error, category: .Message)
         }
 
-        SCLogger.logger.info(message: "Message received: \(message.content) \(message.date.description)", category: .Message)
-        
-        #if DEBUG
-        /// *************************
-        // DO NOT USE IN PRODUCTION
-        /// *************************
-       // let msg = _updateMessage(message: message)
-        /// *************************
-        #endif
-        
-        messageRepo.saveMessage(message: message)
     }
     
     func onReceive(message: String) {
@@ -112,12 +104,14 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     //MARK: Private methods
     
     private func sendMessage(message: Message) async {
-        guard let data = adapter.serialize(data: message) else {
+        do {
+            let data = try adapter.serialize(data: message)
+            await client.connect(to: GlobalState.webSocketURL)
+            await client.send(data: data)
+        } catch {
             SCLogger.logger.error(message: "Error serialising the message", category: .Message)
             return
-        }
-        await client.connect(to: GlobalState.webSocketURL)
-        await client.send(data: data)
+        }       
     }
     
     private func registerObserver(for name: Notification.Name) {

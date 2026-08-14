@@ -7,12 +7,12 @@
 
 import Foundation
 
-protocol JSONAdapterProtocol {
+protocol JSONAdapter {
     func serialize(data: Codable) -> Data?
     func deserialize<T: Decodable>(data: Data) -> T?
 }
 
-struct JSONAdapter: JSONAdapterProtocol {
+struct JSONAdapterImpl: JSONAdapter {
     
     func serialize(data: any Codable) -> Data? {
         let encoder = JSONEncoder()

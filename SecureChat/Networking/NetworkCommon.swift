@@ -18,12 +18,12 @@ enum BaseAddress {
     func getBaseAddress() -> String {
         switch self {
         case .baseAddressAuth:
-            return "http://localhost:8080"
+            return "http://localhost:8080/"
         case .baseAddressRelay:
-            return "http://localhost:8081"
+            return "http://localhost:8080/relay"
 #if DEBUG
         case .baseAddressEcho:
-            return "http://localhost:8082"
+            return "http://localhost:8080/echo"
 #endif
         }
     }
@@ -57,14 +57,23 @@ enum Endpoint {
     }
 }
 
-enum RequestType {
+enum HTTPMethodType {
     case get
     case post
+    
+    func getMethod() -> String {
+        switch self {
+        case .get:
+            return "GET"
+        case .post:
+            return "POST"
+        }
+    }
 }
 
 enum NetworkUtilities {
     
-    func createURL(from endpoint: String) throws -> URL {
+    static func createURL(from endpoint: String) throws -> URL {
         guard let url = URL(string: endpoint) else {
             throw NetworkError.badURL
         }
@@ -72,8 +81,13 @@ enum NetworkUtilities {
         return url
     }
     
-//    func createRequest(with url: URL, type: RequestType) -> URLRequest {
-//        let urlRequest = URLRequest(url: url)
-//        urlRequest.httpBody
-//    }
+    static func createRequest(with url: URL, httpMethod: HTTPMethodType, httpBody: Data?) -> URLRequest {
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = httpMethod.getMethod()
+        urlRequest.httpBody = httpBody
+        
+        return urlRequest
+        
+    }
+   
 }

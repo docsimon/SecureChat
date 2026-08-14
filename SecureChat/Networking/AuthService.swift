@@ -8,7 +8,7 @@ import Foundation
 
 protocol AuthService {
     // the user sends its own phone number, username and push notification token when registering to the auth server
-    func register(phone: String, username: String, token: String) async throws
+    func register(data: RegistrationDTO) async throws
     func invite() async throws
     func getInvites() async throws -> [Data]
     func acceptInvite() async throws
@@ -19,16 +19,22 @@ protocol AuthService {
 struct AuthServiceImpl: AuthService {
    
     let networkAdapter: NetworkAdapter
+    let jsonAdapter: JSONAdapter
     
-    init(networkAdapter: NetworkAdapter) {
+    init(networkAdapter: NetworkAdapter, jsonAdapter: JSONAdapter) {
         self.networkAdapter = networkAdapter
+        self.jsonAdapter = jsonAdapter
     }
     
-
-    
     //MARK: AuthService Protocol
-    func register(phone: String, username: String, token: String) async throws {
-    
+    func register(data: RegistrationDTO) async throws {
+        let body = jsonAdapter.serialize(data: data)
+        let baseAddress = BaseAddress.baseAddressAuth.getBaseAddress()
+        let endpoint = Endpoint.register.getEndpoint()
+        let url = try NetworkUtilities.createURL(from: baseAddress + endpoint)
+        let request = NetworkUtilities.createRequest(with: url, httpMethod: .post, httpBody: body)
+        
+        try await networkAdapter.send(request: request)
     }
     
     func invite() async throws {

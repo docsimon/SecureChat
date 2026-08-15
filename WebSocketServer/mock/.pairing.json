@@ -5,6 +5,12 @@
       "phone": "+44777712345",
       "displayName": "Ciccio",
       "pushToken": "mock-token"
+    },
+    {
+      "userID": "B2927228-3196-45D4-83D9-393F68CDCFC7",
+      "phone": "+441234567890",
+      "displayName": "+441234567890",
+      "pushToken": null
     }
   ],
   "invites": [],

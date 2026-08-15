@@ -11,6 +11,7 @@ protocol GuestRepository {
     func getGuest(id: UUID) throws -> Guest
     func addGuest(username: String, id: UUID?)
     func getOwner() throws -> Guest
+    func update(guest: Guest) throws
 }
 
 final class GuestRepositoryImpl: GuestRepository {
@@ -36,6 +37,10 @@ final class GuestRepositoryImpl: GuestRepository {
     
     func getOwner() throws -> Guest {
         return try db.getOwner()
+    }
+    
+    func update(guest: Guest) throws {
+        return db.update(guest: guest)
     }
     
     init(db: DatabaseStrategy = CustomDB.shared) {

@@ -13,7 +13,7 @@ struct RouterView: View {
     
     var body: some View {
     
-        if (try? dep.router.isRegistered) == false {
+        if (try? dep.router.isRegistered) == true {
             displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
             
         } else {
@@ -27,6 +27,7 @@ func displayRegistrationScreen(registerViewModel: RegisterOwnerViewModel) -> som
     RegistrationView { number in
         print(number)
         await registerViewModel.registerOwner(with: number)
+        print("Owner registered!")
     }
 }
 

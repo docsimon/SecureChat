@@ -123,6 +123,10 @@ import Foundation
 //}
 
 final class CustomDB: DatabaseStrategy {
+    func update(guest: Guest) {
+        
+    }
+    
     func getOwner() throws -> Guest {
         return mockGuest()
     }

@@ -35,6 +35,11 @@ class RegisterOwnerViewModel {
             
             try await authService.register(data: dataDTO)
             
+            // update the owner registered flag
+            let registeredOwner = Guest(id: owner.id, username: owner.username, isOwner: owner.isOwner, date: Date(), isRegistered: true)
+            try guestRepo.update(guest: registeredOwner)
+            
+            
         } catch {
             SCLogger.logger.error(message: "Owner doesn't exist", error: error, category: .Database)
             fatalError()
@@ -52,6 +57,10 @@ class RegisterOwnerViewModel {
     //TODO: implement the logic to get the PN token
     private func getAPNsToken() -> String {
         return "12345"
+    }
+    
+    private func updateOwner() throws {
+        
     }
 
 }

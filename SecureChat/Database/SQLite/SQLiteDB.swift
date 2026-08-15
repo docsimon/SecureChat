@@ -49,6 +49,28 @@ final class SQLiteDB: DatabaseStrategy {
         }
     }
     
+    func update(guest: Guest) {
+        
+        do {
+            // Update guest
+            
+            let guestRow = GuestsTable.guests.filter(GuestsTable.id == guest.id).limit(1)
+            
+            let addMessageQuery = guestRow.update (
+                GuestsTable.date <- Date(),
+                GuestsTable.isOwner <- guest.isOwner,
+                GuestsTable.username <- guest.username,
+                GuestsTable.isRegistered <- guest.isRegistered
+            )
+            
+            try db.run(addMessageQuery)
+            SCLogger.logger.info(message: "Guest updated correctly! \(guest.username) \(guest.id)", category: .Database)
+
+        } catch {
+            SCLogger.logger.error(message: "Error updating guest record: \(guest.username) \(guest.id)", error: error, category: .Database)
+        }
+    }
+    
     func saveMessage(message: Message) {
         do {
             // Update messages table

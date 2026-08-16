@@ -12,5 +12,4 @@ struct Guest: Equatable {
     let username: String
     let isOwner: Bool
     let date: Date
-    let isRegistered: Bool
 }

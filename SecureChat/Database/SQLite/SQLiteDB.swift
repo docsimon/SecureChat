@@ -59,8 +59,7 @@ final class SQLiteDB: DatabaseStrategy {
             let addMessageQuery = guestRow.update (
                 GuestsTable.date <- Date(),
                 GuestsTable.isOwner <- guest.isOwner,
-                GuestsTable.username <- guest.username,
-                GuestsTable.isRegistered <- guest.isRegistered
+                GuestsTable.username <- guest.username
             )
             
             try db.run(addMessageQuery)
@@ -123,9 +122,8 @@ final class SQLiteDB: DatabaseStrategy {
             id: row[GuestsTable.id],
             username: row[GuestsTable.username],
             isOwner: row[GuestsTable.isOwner],
-            date: row[GuestsTable.date],
-            isRegistered: row[GuestsTable.isRegistered])
-        
+            date: row[GuestsTable.date])
+    
         return fetchedGuest
     }
     
@@ -177,7 +175,7 @@ final class SQLiteDB: DatabaseStrategy {
     
     func getOwner() throws -> Guest {
         if let row = try db.pluck(GuestsTable.guests.filter(GuestsTable.isOwner)) {
-            return Guest(id: row[GuestsTable.id], username: row[GuestsTable.username], isOwner: row[GuestsTable.isOwner], date: row[GuestsTable.date], isRegistered: row[GuestsTable.isRegistered])
+            return Guest(id: row[GuestsTable.id], username: row[GuestsTable.username], isOwner: row[GuestsTable.isOwner], date: row[GuestsTable.date])
         } else {
             throw DBError.ownerIDNotFound
         }

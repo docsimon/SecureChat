@@ -17,7 +17,6 @@ final class DependencyManager {
     let authService: AuthService
     let networkAdapter: NetworkAdapter
     let jsonAdapter: JSONAdapter
-    let router: Router
 
     init() {
         do {
@@ -54,7 +53,7 @@ final class DependencyManager {
         // AuthService
         authService = AuthServiceImpl(networkAdapter: networkAdapter, jsonAdapter: jsonAdapter)
         // Router
-        router = Router(guestRepo: guestRepo)
+        
     }
     
     @MainActor func makeChatListViewModel() -> ChatListViewModel {

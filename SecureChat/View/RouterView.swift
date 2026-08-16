@@ -13,7 +13,7 @@ struct RouterView: View {
     
     var body: some View {
     
-        if (try? dep.router.isRegistered) == true {
+        if true {
             displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
             
         } else {

@@ -26,17 +26,14 @@ class RegisterOwnerViewModel {
        
         do {
             let owner = try fetchOwner()
-            guard !owner.isRegistered else {
-                SCLogger.logger.error(message: "Owner already registered. You shouldn't be here", category: .Database)
-                fatalError()
-            }
+            
             
             let dataDTO = RegistrationDTO(userID: owner.id, phone: phone, username: owner.username, token: getAPNsToken())
             
             try await authService.register(data: dataDTO)
             
             // update the owner registered flag
-            let registeredOwner = Guest(id: owner.id, username: owner.username, isOwner: owner.isOwner, date: Date(), isRegistered: true)
+            let registeredOwner = Guest(id: owner.id, username: owner.username, isOwner: owner.isOwner, date: Date())
             try guestRepo.update(guest: registeredOwner)
             
             

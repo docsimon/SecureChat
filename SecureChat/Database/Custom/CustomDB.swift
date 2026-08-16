@@ -183,7 +183,7 @@ final class CustomDB: DatabaseStrategy {
     
     private func mockGuest() -> Guest {
         
-        return Guest(id: UUID(), username: "test", isOwner: false, date: Date(), isRegistered: false)
+        return Guest(id: UUID(), username: "test", isOwner: false, date: Date())
     }
         
 }

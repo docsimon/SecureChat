@@ -31,7 +31,7 @@ final class GuestRepositoryImpl: GuestRepository {
             return id
         }()
 
-        let newGuest = Guest(id: guestID, username: username, isOwner: false, date: Date(), isRegistered: false)
+        let newGuest = Guest(id: guestID, username: username, isOwner: false, date: Date())
         db.addGuest(guest: newGuest)
     }
     

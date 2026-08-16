@@ -19,6 +19,16 @@ protocol SQLiteSchemaProtocol {
 
 // Tables Schema
 
+enum RegistrationTable {
+    
+    static let name = "registration"
+    static let registration = Table(name)
+    static let ownerID = SQLite.Expression<UUID>("id")
+    static let phoneNumberSentDate = SQLite.Expression<Date?>("phoneNumberSentDate") // when the user sends the phone numebt to the auth server
+    static let otpSentDate = SQLite.Expression<Date?>("otpSentDate") // when the user sends the otp to the auth server
+    static let registrationDate = SQLite.Expression<Date?>("registrationDate") // when the server confirms user registration after validating the phone number through the otp.
+}
+
 
 enum GuestsTable {
     
@@ -28,7 +38,6 @@ enum GuestsTable {
     static let date = SQLite.Expression<Date>("date")
     static let username = SQLite.Expression<String>("username")
     static let isOwner = SQLite.Expression<Bool>("isOwner")
-    static let isRegistered = SQLite.Expression<Bool>("isRegistered") // if the owner is registered on the server. This only applies to the owner. For all th eother users this field will be always false.
 }
 
 enum ChatsTable {
@@ -64,6 +73,34 @@ enum MessagesTable {
 
 struct SQLiteSchema: SQLiteSchemaProtocol {
     
+    
+    //MARK: Registration Table
+    
+    func createRegistrationTable(db: Connection, ownerID: UUID) throws {
+
+        guard !(try db.tableExists(RegistrationTable.name)) else {
+            SCLogger.logger.info(message: "Registration table already exists!", category: .Database)
+            return
+        }
+
+        try db.transaction {
+            try db.run(RegistrationTable.registration.create(ifNotExists: true) { t in
+                t.column(RegistrationTable.ownerID, primaryKey: true)
+                t.column(RegistrationTable.phoneNumberSentDate)
+                t.column(RegistrationTable.otpSentDate)
+                t.column(RegistrationTable.registrationDate)
+            })
+
+            try db.run(RegistrationTable.registration.insert(
+                RegistrationTable.ownerID <- ownerID
+            ))
+        }
+
+        SCLogger.logger.info(message: "Registration table created!", category: .Database)
+    }
+    
+    
+    
     //MARK: Guests Table
     
     func createGuestTable(db: Connection) throws {
@@ -79,7 +116,6 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
             t.column(GuestsTable.date)
             t.column(GuestsTable.username)
             t.column(GuestsTable.isOwner)
-            t.column(GuestsTable.isRegistered)
         })
         
         SCLogger.logger.info(message: "Guests table created!", category: .Database)
@@ -158,6 +194,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         SCLogger.logger.info(message: "Messages table created!", category: .Database)
     }
         
+    
     private func addOwner(db: Connection) throws {
     
         guard try db.tableExists(GuestsTable.name) else {
@@ -171,8 +208,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
                 GuestsTable.id <- guestID,
                 GuestsTable.date <- Date(),
                 GuestsTable.username <- "Owner",
-                GuestsTable.isOwner <- true,
-                GuestsTable.isRegistered <- false
+                GuestsTable.isOwner <- true
             )
             
             try db.run(ownerInsert)

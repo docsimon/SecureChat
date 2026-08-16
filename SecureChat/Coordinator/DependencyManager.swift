@@ -23,8 +23,8 @@ final class DependencyManager {
             self.db = try SQLiteDB()
             SCLogger.logger.info(message: LogMessage.SQLiteDBCreated, category: .Database)
         } catch {
-            self.db = CustomDB()
             SCLogger.logger.error(message: LogMessage.SQLiteDBNotCreated, error: error, category: .Database)
+            fatalError()
         }
         
         let notificationCenter = NotificationCenter.default

@@ -43,7 +43,7 @@ final class GuestRepositoryImpl: GuestRepository {
         return db.update(guest: guest)
     }
     
-    init(db: DatabaseStrategy = CustomDB.shared) {
+    init(db: DatabaseStrategy) {
         self.db = db
     }
 

@@ -36,7 +36,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     
     init(guestRepo: GuestRepository,
                  messageRepo: MessageRepositoryProtocol,
-                 db: DatabaseStrategy = CustomDB.shared,
+                 db: DatabaseStrategy,
                  notificationCenter: NotificationCenter = NotificationCenter.default,
                  client: ClientProtocol = WebsocketClient(),
                  adapter: JSONAdapter = JSONAdapterImpl()) {

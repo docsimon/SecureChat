@@ -19,4 +19,6 @@ protocol DatabaseStrategy {
     func bootstrap() throws
     func createChat(title: String)
     func getOwner() throws -> Guest
+    func update(registration: RegistrationData)
+    func getRegistrationData() throws -> RegistrationData
 }

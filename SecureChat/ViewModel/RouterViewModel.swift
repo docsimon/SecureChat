@@ -23,18 +23,17 @@ enum RegistrationState {
 @Observable @MainActor
 final class RouterViewModel {
     
-    let guestRepo: GuestRepository
+    let registrationRepo: RegistrationRepository
     
-    init(guestRepo: GuestRepository) {
-        self.guestRepo = guestRepo
+    init(registrationRepo: RegistrationRepository) {
+        self.registrationRepo = registrationRepo
+    }
+
+    var state: RegistrationState {
+        if registrationRepo.registrationDate != nil { return .registered }
+        if registrationRepo.otpSentDate != nil { return .awaitingConfirmation }
+        if registrationRepo.phoneNumberSentDate != nil { return .awaitingOTP }
+        return .notStarted
     }
     
-//    
-//    var state: RegistrationState {
-//        if registrationDate != nil { return .registered }
-//        if otpSentDate != nil { return .awaitingConfirmation }
-//        if phoneNumberSentDate != nil { return .awaitingOTP }
-//        return .notStarted
-//    }
-//    
 }

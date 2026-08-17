@@ -17,6 +17,7 @@ final class DependencyManager {
     let authService: AuthService
     let networkAdapter: NetworkAdapter
     let jsonAdapter: JSONAdapter
+    let registrationRepo: RegistrationRepository
 
     init() {
         do {
@@ -52,7 +53,8 @@ final class DependencyManager {
         networkAdapter = NetworkAdapterImpl(session: URLSession.shared)
         // AuthService
         authService = AuthServiceImpl(networkAdapter: networkAdapter, jsonAdapter: jsonAdapter)
-        // Router
+        // Registration repository
+        registrationRepo = RegistrationRepositoryImpl(db: db)
         
     }
     
@@ -73,7 +75,12 @@ final class DependencyManager {
         return MessageViewModel(message: message, guestRepo: guestRepo)
     }
     
-    @MainActor func makeRegisterOwnerViewModel() -> RegisterOwnerViewModel {
-        return RegisterOwnerViewModel(guestRepo: guestRepo, authService: authService)
+    @MainActor func makePhoneNumberViewModel() -> PhoneNumberViewModel {
+        return PhoneNumberViewModel(guestRepo: guestRepo, authService: authService)
     }
+    
+    @MainActor func makeRouterViewModel() -> RouterViewModel {
+        return RouterViewModel(registrationRepo: registrationRepo)
+    }
+    
 }

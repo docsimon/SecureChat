@@ -238,6 +238,8 @@ final class SQLiteDB: DatabaseStrategy {
             try schema.createChatTable(db: db)
             try schema.createChatGuestJointTable(db: db)
             try schema.createMessageTable(db: db)
+            let owner = try getOwner()
+            try schema.createRegistrationTable(db: db, ownerID: owner.id)
         } catch {
             SCLogger.logger.error(message: LogMessage.SQLiteTableError, error: error, category: .Database)
         }

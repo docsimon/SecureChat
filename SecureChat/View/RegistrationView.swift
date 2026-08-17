@@ -1,5 +1,5 @@
 //
-//  RegistrationView.swift
+//  PhoneNumberView.swift
 //  SecureChat
 //
 //  Created by Simone Barbara on 14/08/2026.
@@ -61,7 +61,7 @@ struct Country: Identifiable, Hashable {
 
 // MARK: - Registration view
 
-struct RegistrationView: View {
+struct PhoneNumberView: View {
 
     /// Called with the number in E.164 form, e.g. "+447911123456".
     var onContinue: (String) async throws -> Void
@@ -208,7 +208,7 @@ struct RegistrationView: View {
 // MARK: - Preview
 
 #Preview {
-    RegistrationView { number in
+    PhoneNumberView { number in
         try await Task.sleep(for: .seconds(1))
         print("Sending code to \(number)")
     }

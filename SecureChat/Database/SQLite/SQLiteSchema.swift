@@ -14,6 +14,7 @@ protocol SQLiteSchemaProtocol {
     func createChatTable(db: Connection) throws
     func createChatGuestJointTable(db: Connection) throws
     func createMessageTable(db: Connection) throws
+    func createRegistrationTable(db: Connection, ownerID: UUID) throws
 }
 
 

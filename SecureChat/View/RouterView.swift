@@ -10,21 +10,27 @@ import SwiftUI
 struct RouterView: View {
     
     let dep: DependencyManager
+    let viewModel: RouterViewModel
     
     var body: some View {
-    
-        if true {
+        
+        switch viewModel.state {
+        case .registered:
             displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
-            
-        } else {
-            displayRegistrationScreen(registerViewModel: dep.makeRegisterOwnerViewModel())
+        case .notStarted:
+            displayPhoneNumberScreen(registerViewModel: dep.makePhoneNumberViewModel())
+        case .awaitingOTP:
+            Text("Add the code you got via sms/email")
+        case .awaitingConfirmation:
+            Text("Waiting for server confirmation of your number")
         }
+
     }
 }
 
 @ViewBuilder @MainActor
-func displayRegistrationScreen(registerViewModel: RegisterOwnerViewModel) -> some View {
-    RegistrationView { number in
+func displayPhoneNumberScreen(registerViewModel: PhoneNumberViewModel) -> some View {
+    PhoneNumberView { number in
         print(number)
         await registerViewModel.registerOwner(with: number)
         print("Owner registered!")

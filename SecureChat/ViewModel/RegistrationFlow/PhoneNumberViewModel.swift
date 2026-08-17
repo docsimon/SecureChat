@@ -1,5 +1,5 @@
 //
-//  RegisterOwnerViewModel.swift
+//  PhoneNumberViewModel.swift
 //  SecureChat
 //
 //  Created by Simone Barbara on 14/08/2026.
@@ -12,7 +12,7 @@ enum RegistrationError: Error {
 }
 
 @MainActor @Observable
-class RegisterOwnerViewModel {
+class PhoneNumberViewModel {
     
     let guestRepo: GuestRepository
     let authService: AuthService

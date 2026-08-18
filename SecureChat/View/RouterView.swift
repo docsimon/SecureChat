@@ -10,15 +10,21 @@ import SwiftUI
 struct RouterView: View {
     
     let dep: DependencyManager
-    let viewModel: RouterViewModel
+    let registrationRouterViewModel: RegistrationRouterViewModel
     
     var body: some View {
         
-        switch viewModel.state {
+        Text("Ciccio Formaggio")
+        
+        switch registrationRouterViewModel.state {
         case .registered:
             displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
         case .notStarted:
-            displayPhoneNumberScreen(registerViewModel: dep.makePhoneNumberViewModel())
+            displayPhoneNumberScreen(
+                registrationRouterViewModel: registrationRouterViewModel,
+                phoneNumberViewModel: dep.makePhoneNumberViewModel(),
+                ownerID: registrationRouterViewModel.ownerID,
+                token: "12345")
         case .awaitingOTP:
             Text("Add the code you got via sms/email")
         case .awaitingConfirmation:
@@ -29,12 +35,20 @@ struct RouterView: View {
 }
 
 @ViewBuilder @MainActor
-func displayPhoneNumberScreen(registerViewModel: PhoneNumberViewModel) -> some View {
-    PhoneNumberView { number in
-        print(number)
-        await registerViewModel.registerOwner(with: number)
-        print("Owner registered!")
-    }
+func displayPhoneNumberScreen(
+    registrationRouterViewModel: RegistrationRouterViewModel,
+    phoneNumberViewModel: PhoneNumberViewModel,
+    ownerID: UUID,
+    token: String) -> some View {
+    PhoneNumberView(
+        onContinue: { date in
+            try registrationRouterViewModel.updateRegistrationTable(phoneNumberDate: date)
+        },
+        phoneNumberViewModel: phoneNumberViewModel,
+        ownerID: ownerID,
+        token: token,
+        
+    )
 }
 
 @ViewBuilder @MainActor

@@ -14,7 +14,7 @@ struct SecureChatApp: App {
     
     var body: some Scene {
         WindowGroup {
-            RouterView(dep: dep, viewModel: dep.makeRouterViewModel())
+            RouterView(dep: dep, registrationRouterViewModel: dep.makeRegistrationRouterViewModel())
         }
     }
 }

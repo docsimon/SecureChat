@@ -12,9 +12,14 @@ import Foundation
  - invites
  */
 
+enum RegistrationError: Error {
+    case ownerAlreadyRegistered
+    case ownerDoesNOTExist
+    case phoneNumberRegistration
+}
+
 protocol AuthService {
-    // the user sends its own phone number, username and push notification token when registering to the auth server
-    func register(data: RegistrationDTO) async throws
+    func register(data: RegistrationDTO, method: HTTPMethodType) async throws
     func invite() async throws
     func getInvites() async throws -> [Data]
     func acceptInvite() async throws
@@ -33,16 +38,20 @@ struct AuthServiceImpl: AuthService {
     }
     
     //MARK: AuthService Protocol
-    func register(data: RegistrationDTO) async throws {
+    
+    // this function is used to initially register the owner id on the auth server along with its phone number
+    // and PN token (method POST)
+    // then is used to send the OTP code to validate the phone number (method UPDATE)
+    func register(data: RegistrationDTO, method: HTTPMethodType) async throws {
         let body = try jsonAdapter.serialize(data: data)
         let baseAddress = BaseAddress.baseAddressAuth.getBaseAddress()
         let endpoint = Endpoint.register.getEndpoint()
         let url = try NetworkUtilities.createURL(from: baseAddress + endpoint)
-        let request = NetworkUtilities.createRequest(with: url, httpMethod: .post, httpBody: body)
+        let request = NetworkUtilities.createRequest(with: url, httpMethod: method, httpBody: body)
         
         try await networkAdapter.send(request: request)
     }
-    
+        
     func invite() async throws {
         
     }

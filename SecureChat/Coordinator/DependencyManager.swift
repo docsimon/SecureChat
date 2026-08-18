@@ -76,11 +76,11 @@ final class DependencyManager {
     }
     
     @MainActor func makePhoneNumberViewModel() -> PhoneNumberViewModel {
-        return PhoneNumberViewModel(guestRepo: guestRepo, authService: authService)
+        return PhoneNumberViewModel(authService: authService)
     }
     
-    @MainActor func makeRouterViewModel() -> RouterViewModel {
-        return RouterViewModel(registrationRepo: registrationRepo)
+    @MainActor func makeRegistrationRouterViewModel() -> RegistrationRouterViewModel {
+        return RegistrationRouterViewModel(registrationRepo: registrationRepo, guestRepo: guestRepo)
     }
     
 }

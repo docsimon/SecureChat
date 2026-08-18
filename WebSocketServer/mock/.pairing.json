@@ -11,6 +11,18 @@
       "phone": "+441234567890",
       "displayName": "+441234567890",
       "pushToken": null
+    },
+    {
+      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
+      "phone": "+448888123456",
+      "displayName": "+448888123456",
+      "pushToken": null
+    },
+    {
+      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
+      "phone": "+447777123456",
+      "displayName": "+447777123456",
+      "pushToken": null
     }
   ],
   "invites": [],

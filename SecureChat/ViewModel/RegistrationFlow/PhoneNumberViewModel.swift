@@ -6,58 +6,26 @@
 //
 import SwiftUI
 
-enum RegistrationError: Error {
-    case ownerAlreadyRegistered
-    case ownerDoesNOTExist
-}
-
 @MainActor @Observable
 class PhoneNumberViewModel {
     
-    let guestRepo: GuestRepository
     let authService: AuthService
-    
-    init(guestRepo: GuestRepository, authService: AuthService) {
-        self.guestRepo = guestRepo
+   
+    init(authService: AuthService) {
         self.authService = authService
     }
-    
-    func registerOwner(with phone: String) async {
+   
+    func send(phoneNumber: String, ownerID: UUID, token: String) async throws -> Date {
        
         do {
-            let owner = try fetchOwner()
-            
-            
-            let dataDTO = RegistrationDTO(userID: owner.id, phone: phone, username: owner.username, token: getAPNsToken())
-            
-            try await authService.register(data: dataDTO)
-            
-            // update the owner registered flag
-            let registeredOwner = Guest(id: owner.id, username: owner.username, isOwner: owner.isOwner, date: Date())
-            try guestRepo.update(guest: registeredOwner)
-            
+            let dataDTO = RegistrationDTO(userID: ownerID, phone: phoneNumber, otp: nil, token: token)
+            try await authService.register(data: dataDTO, method: .post)
+            return Date()
             
         } catch {
-            SCLogger.logger.error(message: "Owner doesn't exist", error: error, category: .Database)
+            SCLogger.logger.error(message: "Phone number registration failed!", error: error, category: .Registration)
             fatalError()
         }
        
     }
-    
-    
-    //MARK: private functions
-    
-    private func fetchOwner() throws -> Guest {
-        return try guestRepo.getOwner()
-    }
-    
-    //TODO: implement the logic to get the PN token
-    private func getAPNsToken() -> String {
-        return "12345"
-    }
-    
-    private func updateOwner() throws {
-        
-    }
-
 }

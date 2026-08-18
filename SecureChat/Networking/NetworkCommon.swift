@@ -60,6 +60,8 @@ enum Endpoint {
 enum HTTPMethodType {
     case get
     case post
+    case put
+    case patch
     
     func getMethod() -> String {
         switch self {
@@ -67,6 +69,10 @@ enum HTTPMethodType {
             return "GET"
         case .post:
             return "POST"
+        case .put:
+            return "PUT"
+        case .patch:
+            return "PATCH"
         }
     }
 }

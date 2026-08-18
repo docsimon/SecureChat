@@ -64,7 +64,11 @@ struct Country: Identifiable, Hashable {
 struct PhoneNumberView: View {
 
     /// Called with the number in E.164 form, e.g. "+447911123456".
-    var onContinue: (String) async throws -> Void
+    var onContinue: (Date) async throws -> Void
+    
+    let phoneNumberViewModel: PhoneNumberViewModel
+    let ownerID: UUID
+    let token: String // PN token
 
     @State private var country: Country = Country.all[0]
     @State private var digits = ""
@@ -197,7 +201,8 @@ struct PhoneNumberView: View {
         Task {
             defer { isSubmitting = false }
             do {
-                try await onContinue(e164)
+                let phoneNumberSentDate = try await phoneNumberViewModel.send(phoneNumber: e164, ownerID: ownerID, token: token)
+                try await onContinue(phoneNumberSentDate)
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -206,10 +211,10 @@ struct PhoneNumberView: View {
 }
 
 // MARK: - Preview
-
-#Preview {
-    PhoneNumberView { number in
-        try await Task.sleep(for: .seconds(1))
-        print("Sending code to \(number)")
-    }
-}
+//
+//#Preview {
+//    PhoneNumberView { number in
+//        try await Task.sleep(for: .seconds(1))
+//        print("Sending code to \(number)")
+//    }
+//}

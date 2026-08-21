@@ -39,7 +39,7 @@ protocol OTPVerificationViewModel: ObservableObject {
     /// Non-nil renders the inline error and puts the field in its error state.
     var errorMessage: String? { get }
 
-    func verify() async
+    func verify() async throws -> Date
     func resend() async
 }
 
@@ -51,11 +51,12 @@ extension OTPVerificationViewModel {
 
 // MARK: - Screen
 
-struct OTPVerificationScreen<ViewModel: OTPVerificationViewModel>: View {
+struct OTPVerificationView<ViewModel: OTPVerificationViewModel>: View {
     @ObservedObject var viewModel: ViewModel
 
     /// Pop back to the phone-number screen. Navigation stays out of the view model.
     var onChangePhoneNumber: () -> Void
+    var onContinue: (Date) async throws -> Void
 
     @FocusState private var isCodeFieldFocused: Bool
 
@@ -185,7 +186,10 @@ struct OTPVerificationScreen<ViewModel: OTPVerificationViewModel>: View {
 
     private func submit() {
         isCodeFieldFocused = false
-        Task { await viewModel.verify() }
+        Task {
+            let otpDate = try await viewModel.verify()
+            try await onContinue(otpDate)
+        }
     }
 }
 
@@ -260,48 +264,48 @@ struct OTPCodeField: View {
 
 // MARK: - Preview
 
-@MainActor
-private final class PreviewOTPViewModel: OTPVerificationViewModel {
-    @Published var code = ""
-    @Published var isVerifying = false
-    @Published var isResending = false
-    @Published var resendCooldown = 0
-    @Published var errorMessage: String?
-
-    let phoneNumber = "+44 7700 900123"
-
-    private var cooldownTask: Task<Void, Never>?
-
-    init() { startCooldown() }
-
-    func verify() async {
-        isVerifying = true
-        errorMessage = nil
-        try? await Task.sleep(for: .seconds(1.5))
-        isVerifying = false
-        errorMessage = "That code isn't right. Check it and try again."
-    }
-
-    func resend() async {
-        isResending = true
-        errorMessage = nil
-        code = ""
-        try? await Task.sleep(for: .seconds(1))
-        isResending = false
-        startCooldown()
-    }
-
-    private func startCooldown(seconds: Int = 30) {
-        cooldownTask?.cancel()
-        resendCooldown = seconds
-        cooldownTask = Task { [weak self] in
-            while let self, self.resendCooldown > 0, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                self.resendCooldown -= 1
-            }
-        }
-    }
-}
+//@MainActor
+//private final class PreviewOTPViewModel: OTPVerificationViewModel {
+//    @Published var code = ""
+//    @Published var isVerifying = false
+//    @Published var isResending = false
+//    @Published var resendCooldown = 0
+//    @Published var errorMessage: String?
+//
+//    let phoneNumber = "+44 7700 900123"
+//
+//    private var cooldownTask: Task<Void, Never>?
+//
+//    init() { startCooldown() }
+//
+//    func verify() async {
+//        isVerifying = true
+//        errorMessage = nil
+//        try? await Task.sleep(for: .seconds(1.5))
+//        isVerifying = false
+//        errorMessage = "That code isn't right. Check it and try again."
+//    }
+//
+//    func resend() async {
+//        isResending = true
+//        errorMessage = nil
+//        code = ""
+//        try? await Task.sleep(for: .seconds(1))
+//        isResending = false
+//        startCooldown()
+//    }
+//
+//    private func startCooldown(seconds: Int = 30) {
+//        cooldownTask?.cancel()
+//        resendCooldown = seconds
+//        cooldownTask = Task { [weak self] in
+//            while let self, self.resendCooldown > 0, !Task.isCancelled {
+//                try? await Task.sleep(for: .seconds(1))
+//                self.resendCooldown -= 1
+//            }
+//        }
+//    }
+//}
 //
 //#Preview {
 //    OTPVerificationScreen(

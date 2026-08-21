@@ -79,8 +79,14 @@ final class DependencyManager {
         return PhoneNumberViewModel(authService: authService)
     }
     
+    @MainActor func makeOTPViewModel(ownerID: UUID) -> OTPViewModel {
+        return OTPViewModel(authService: authService, ownerID: ownerID)
+    }
+    
     @MainActor func makeRegistrationRouterViewModel() -> RegistrationRouterViewModel {
         return RegistrationRouterViewModel(registrationRepo: registrationRepo, guestRepo: guestRepo)
     }
+    
+    
     
 }

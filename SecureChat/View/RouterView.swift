@@ -13,9 +13,7 @@ struct RouterView: View {
     let registrationRouterViewModel: RegistrationRouterViewModel
     
     var body: some View {
-        
-        Text("Ciccio Formaggio")
-        
+
         switch registrationRouterViewModel.state {
         case .registered:
             displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
@@ -26,7 +24,7 @@ struct RouterView: View {
                 ownerID: registrationRouterViewModel.ownerID,
                 token: "12345")
         case .awaitingOTP:
-            Text("OTP")
+            displayOTPScreen(registrationRouterViewModel: registrationRouterViewModel, otpViewModel: dep.makeOTPViewModel(ownerID: registrationRouterViewModel.ownerID), ownerID: registrationRouterViewModel.ownerID, token: "12345")
         case .awaitingConfirmation:
             Text("Waiting for server confirmation of your number")
         }
@@ -50,22 +48,17 @@ func displayPhoneNumberScreen(
         
     )
 }
-//
-//func displayOTPScreen(
-//    registrationRouterViewModel: RegistrationRouterViewModel,
-//    OTPViewModel: PhoneNumberViewModel,
-//    ownerID: UUID,
-//    token: String) -> some View {
-//    PhoneNumberView(
-//        onContinue: { date in
-//            try registrationRouterViewModel.updateRegistrationTable(phoneNumberDate: date)
-//        },
-//        phoneNumberViewModel: phoneNumberViewModel,
-//        ownerID: ownerID,
-//        token: token,
-//        
-//    )
-//}
+
+func displayOTPScreen(
+    registrationRouterViewModel: RegistrationRouterViewModel,
+    otpViewModel: OTPViewModel,
+    ownerID: UUID,
+    token: String) -> some View {
+        OTPVerificationView(viewModel: otpViewModel, onChangePhoneNumber: {}, onContinue: {  date in
+            try await registrationRouterViewModel.updateRegistrationTable(otpDate: date)
+        }
+    )
+}
 
 @ViewBuilder @MainActor
 func displayChatListScreen(chatListViewModel: ChatListViewModel, dep: DependencyManager) -> some View {

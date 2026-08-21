@@ -12,12 +12,6 @@ import Foundation
  - invites
  */
 
-enum RegistrationError: Error {
-    case ownerAlreadyRegistered
-    case ownerDoesNOTExist
-    case phoneNumberRegistration
-}
-
 protocol AuthService {
     func registerWithPhone(phone: String, displayName: String, userID: UUID, pushToken: String) async throws
     func registerWithEmail(email: String, displayName: String, userID: UUID, pushToken: String) async throws

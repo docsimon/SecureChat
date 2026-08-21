@@ -1,0 +1,43 @@
+{
+  "users": [
+    {
+      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
+      "phone": "+441234123459",
+      "displayName": "Simon",
+      "pushToken": "12345",
+      "status": "pending_verification",
+      "registeredAt": null,
+      "otp": null
+    },
+    {
+      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
+      "phone": "+441234578686",
+      "displayName": "Simon",
+      "pushToken": "12345",
+      "status": "pending_verification",
+      "registeredAt": null,
+      "otp": {
+        "code": "953912",
+        "expiresAt": 1787321383964,
+        "attempts": 0,
+        "sentAt": 1787321083964
+      }
+    },
+    {
+      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
+      "phone": "+448888999999",
+      "displayName": "Simon",
+      "pushToken": "12345",
+      "status": "pending_verification",
+      "registeredAt": null,
+      "otp": {
+        "code": "449748",
+        "expiresAt": 1787321580638,
+        "attempts": 0,
+        "sentAt": 1787321280638
+      }
+    }
+  ],
+  "invites": [],
+  "chats": []
+}

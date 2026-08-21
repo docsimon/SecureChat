@@ -20,7 +20,7 @@ enum RegistrationState {
 }
 
 
-@Observable @MainActor
+@MainActor @Observable
 final class RegistrationRouterViewModel {
     
     let registrationRepo: RegistrationRepository
@@ -30,8 +30,9 @@ final class RegistrationRouterViewModel {
     init(registrationRepo: RegistrationRepository, guestRepo: GuestRepository) {
         self.registrationRepo = registrationRepo
         self.guestRepo = guestRepo
-        //state = getState
-        state = .notStarted
+        state = getState
+        // ****** WARNING ******
+        // comment the state above to force display the phoneScreen
     }
 
     var getState: RegistrationState {
@@ -58,7 +59,8 @@ final class RegistrationRouterViewModel {
     }
     
     func updateRegistrationTable(otpDate: Date) throws {
-        
+        registrationRepo.update(otpSentDate: otpDate)
+        state = .awaitingConfirmation
     }
     
     func updateRegistrationTable(registrationDate: Date) throws {

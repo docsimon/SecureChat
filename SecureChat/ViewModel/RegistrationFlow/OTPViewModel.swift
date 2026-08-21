@@ -1,25 +1,24 @@
 //
-//  PhoneNumberViewModel.swift
+//  OTPViewModel.swift
 //  SecureChat
 //
-//  Created by Simone Barbara on 14/08/2026.
+//  Created by doc on 19/08/2026.
 //
+
 import SwiftUI
 
 @MainActor @Observable
-class PhoneNumberViewModel {
-    
+final class OTPViewModel {
     let authService: AuthService
    
     init(authService: AuthService) {
         self.authService = authService
     }
    
-    func send(phoneNumber: String, ownerID: UUID, token: String, userName: String) async throws -> Date {
+    func send(otpCode: String, ownerID: UUID) async throws -> Date {
        
         do {
-            
-            try await authService.registerWithPhone(phone: phoneNumber, displayName: userName, userID: ownerID, pushToken: token)
+            try await authService.verify(userID: ownerID, code: otpCode)
             return Date()
             
         } catch {

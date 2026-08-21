@@ -8,12 +8,30 @@
 import Foundation
 
 // data sent to the auth server through the auth service to manage the registration flow
-struct RegistrationDTO: Codable {
+struct RegistrationWithPhoneDTO: Codable {
     let userID: UUID
     let phone: String
-    let otp: String?
-    let token: String //push notification token
+    let pushToken: String //push notification token
+    let displayName: String
 }
+
+struct RegistrationWithEmailDTO: Codable {
+    let userID: UUID
+    let email: String
+    let pushToken: String //push notification token
+    let displayName: String
+}
+
+struct RegistrationOTPVerificationDTO: Codable {
+    let userID: UUID
+    let code: String
+}
+
+struct RegistrationUpdatePhone: Codable {
+    let phone: String
+}
+
+
 
 // used by db through RegistrationRepository
 struct RegistrationData {

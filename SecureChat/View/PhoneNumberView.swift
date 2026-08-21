@@ -201,7 +201,7 @@ struct PhoneNumberView: View {
         Task {
             defer { isSubmitting = false }
             do {
-                let phoneNumberSentDate = try await phoneNumberViewModel.send(phoneNumber: e164, ownerID: ownerID, token: token)
+                let phoneNumberSentDate = try await phoneNumberViewModel.send(phoneNumber: e164, ownerID: ownerID, token: token, userName: "Simon")
                 try await onContinue(phoneNumberSentDate)
             } catch {
                 errorMessage = error.localizedDescription

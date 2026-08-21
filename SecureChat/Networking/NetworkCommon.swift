@@ -32,26 +32,21 @@ enum BaseAddress {
 
 enum Endpoint {
     case register
-    case invite
-    case invites
-    case inviteAccept
-    case inviteDecline
-    case chats
+    case verify
+    case resend
+    case updatePhone(userID: UUID)
+    
     
     func getEndpoint() -> String {
         switch self {
         case .register:
             return "register"
-        case .invite:
-            return "invite"
-        case .invites:
-            return "invites"
-        case .inviteAccept:
-            return "invite/accept"
-        case .inviteDecline:
-            return "invite/decline"
-        case .chats:
-            return "chats"
+        case .verify:
+            return "register/verify"
+        case .resend:
+            return "register/resend"
+        case .updatePhone(let userID):
+            return "users/\(userID)/phone"
         }
         
     }

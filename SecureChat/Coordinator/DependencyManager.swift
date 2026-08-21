@@ -52,7 +52,7 @@ final class DependencyManager {
         // NetworkAdapter
         networkAdapter = NetworkAdapterImpl(session: URLSession.shared)
         // AuthService
-        authService = AuthServiceImpl(networkAdapter: networkAdapter, jsonAdapter: jsonAdapter)
+        authService = AuthServiceImpl(networkAdapter: networkAdapter, jsonAdapter: jsonAdapter, baseAddress: .baseAddressAuth)
         // Registration repository
         registrationRepo = RegistrationRepositoryImpl(db: db)
         

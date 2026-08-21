@@ -26,7 +26,7 @@ struct RouterView: View {
                 ownerID: registrationRouterViewModel.ownerID,
                 token: "12345")
         case .awaitingOTP:
-            Text("Add the code you got via sms/email")
+            Text("OTP")
         case .awaitingConfirmation:
             Text("Waiting for server confirmation of your number")
         }
@@ -50,6 +50,22 @@ func displayPhoneNumberScreen(
         
     )
 }
+//
+//func displayOTPScreen(
+//    registrationRouterViewModel: RegistrationRouterViewModel,
+//    OTPViewModel: PhoneNumberViewModel,
+//    ownerID: UUID,
+//    token: String) -> some View {
+//    PhoneNumberView(
+//        onContinue: { date in
+//            try registrationRouterViewModel.updateRegistrationTable(phoneNumberDate: date)
+//        },
+//        phoneNumberViewModel: phoneNumberViewModel,
+//        ownerID: ownerID,
+//        token: token,
+//        
+//    )
+//}
 
 @ViewBuilder @MainActor
 func displayChatListScreen(chatListViewModel: ChatListViewModel, dep: DependencyManager) -> some View {

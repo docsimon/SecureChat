@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 final class DependencyManager {
     
     let chatRepo: ChatRepositoryProtocol
@@ -18,7 +19,16 @@ final class DependencyManager {
     let networkAdapter: NetworkAdapter
     let jsonAdapter: JSONAdapter
     let registrationRepo: RegistrationRepository
-
+    let registrationManager: RegistrationManager
+    lazy var ownerID: UUID =  {
+        do {
+            return try guestRepo.getOwner().id
+        } catch {
+            SCLogger.logger.error(message: "Owner not found. This is a blocking error", error: error, category: .Database)
+            fatalError()
+        }
+    }()
+    
     init() {
         do {
             self.db = try SQLiteDB()
@@ -35,6 +45,7 @@ final class DependencyManager {
         // GuestRepository
         guestRepo = GuestRepositoryImpl(db: db)
         
+
         
         /* ************************** */
         /* USE ONLY FOR TESTING USERS */
@@ -55,7 +66,7 @@ final class DependencyManager {
         authService = AuthServiceImpl(networkAdapter: networkAdapter, jsonAdapter: jsonAdapter, baseAddress: .baseAddressAuth)
         // Registration repository
         registrationRepo = RegistrationRepositoryImpl(db: db)
-        
+        registrationManager = RegistrationManagerImpl(registrationRepo: registrationRepo)
     }
     
     @MainActor func makeChatListViewModel() -> ChatListViewModel {
@@ -83,8 +94,8 @@ final class DependencyManager {
         return OTPViewModel(authService: authService, ownerID: ownerID)
     }
     
-    @MainActor func makeRegistrationRouterViewModel() -> RegistrationRouterViewModel {
-        return RegistrationRouterViewModel(registrationRepo: registrationRepo, guestRepo: guestRepo)
+    @MainActor func makeRegistrationViewModel() -> RegistrationViewModel {
+        return RegistrationViewModel(registrationManager: registrationManager)
     }
     
     

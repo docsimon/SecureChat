@@ -7,24 +7,24 @@
 
 import SwiftUI
 
-struct RouterView: View {
+struct RegistrationView: View {
     
     let dep: DependencyManager
-    let registrationRouterViewModel: RegistrationRouterViewModel
+    let registrationViewModel: RegistrationViewModel
     
     var body: some View {
 
-        switch registrationRouterViewModel.state {
+        switch registrationViewModel.registrationManager.state {
         case .registered:
             displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
         case .notStarted:
             displayPhoneNumberScreen(
-                registrationRouterViewModel: registrationRouterViewModel,
+                registrationManager: dep.registrationManager,
                 phoneNumberViewModel: dep.makePhoneNumberViewModel(),
-                ownerID: registrationRouterViewModel.ownerID,
+                ownerID: dep.ownerID,
                 token: "12345")
         case .awaitingOTP:
-            displayOTPScreen(registrationRouterViewModel: registrationRouterViewModel, otpViewModel: dep.makeOTPViewModel(ownerID: registrationRouterViewModel.ownerID), ownerID: registrationRouterViewModel.ownerID, token: "12345")
+            displayOTPScreen(registrationManager: dep.registrationManager, otpViewModel: dep.makeOTPViewModel(ownerID: dep.ownerID), ownerID: dep.ownerID, token: "12345")
         case .awaitingConfirmation:
             Text("Waiting for server confirmation of your number")
         }
@@ -34,13 +34,13 @@ struct RouterView: View {
 
 @ViewBuilder @MainActor
 func displayPhoneNumberScreen(
-    registrationRouterViewModel: RegistrationRouterViewModel,
+    registrationManager: RegistrationManager,
     phoneNumberViewModel: PhoneNumberViewModel,
     ownerID: UUID,
     token: String) -> some View {
     PhoneNumberView(
         onContinue: { date in
-            try registrationRouterViewModel.updateRegistrationTable(phoneNumberDate: date)
+            try registrationManager.updateRegistrationTable(phoneNumberDate: date)
         },
         phoneNumberViewModel: phoneNumberViewModel,
         ownerID: ownerID,
@@ -50,17 +50,17 @@ func displayPhoneNumberScreen(
 }
 
 func displayOTPScreen(
-    registrationRouterViewModel: RegistrationRouterViewModel,
+    registrationManager: RegistrationManager,
     otpViewModel: OTPViewModel,
     ownerID: UUID,
     token: String) -> some View {
         OTPVerificationView(viewModel: otpViewModel,
                             onChangePhoneNumber: {
             // reset the state to notStarted
-            try await registrationRouterViewModel.resetPhoneNumber()
+            try registrationManager.resetPhoneNumber()
         },
                             onContinue: {  date in
-            try await registrationRouterViewModel.updateRegistrationTable(otpDate: date)
+            try registrationManager.updateRegistrationTable(otpDate: date)
         }
     )
 }

@@ -54,7 +54,12 @@ func displayOTPScreen(
     otpViewModel: OTPViewModel,
     ownerID: UUID,
     token: String) -> some View {
-        OTPVerificationView(viewModel: otpViewModel, onChangePhoneNumber: {}, onContinue: {  date in
+        OTPVerificationView(viewModel: otpViewModel,
+                            onChangePhoneNumber: {
+            // reset the state to notStarted
+            try await registrationRouterViewModel.resetPhoneNumber()
+        },
+                            onContinue: {  date in
             try await registrationRouterViewModel.updateRegistrationTable(otpDate: date)
         }
     )

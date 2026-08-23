@@ -8,8 +8,8 @@
 import Foundation
 
 protocol RegistrationRepository {
-    func update(phoneSentDate: Date)
-    func update(otpSentDate: Date)
+    func update(phoneSentDate: Date?)
+    func update(otpSentDate: Date?)
     func update(registrationDate: Date)
     var phoneNumberSentDate: Date? { get }
     var otpSentDate: Date? { get }
@@ -26,7 +26,7 @@ final class RegistrationRepositoryImpl: RegistrationRepository {
     
     //MARK: RegistrationRepository Protocol
     
-    func update(phoneSentDate: Date) {
+    func update(phoneSentDate: Date?) {
         let currentRegistrationData = getCurrentRegistrationData()
         let newRegistrationData = RegistrationData(
             ownerID: currentRegistrationData.ownerID,
@@ -36,7 +36,7 @@ final class RegistrationRepositoryImpl: RegistrationRepository {
         db.update(registration: newRegistrationData)
     }
     
-    func update(otpSentDate: Date) {
+    func update(otpSentDate: Date?) {
         let currentRegistrationData = getCurrentRegistrationData()
         let newRegistrationData = RegistrationData(
             ownerID: currentRegistrationData.ownerID,

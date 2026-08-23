@@ -10,13 +10,13 @@ import Foundation
 enum NetworkError: Error {
     case badURL
     case badHttpResponse
-    case unsuccessfulResponse(code: Int)
+    case unsuccessfulResponse(code: Int, payload: Data)
 }
 
 
 protocol NetworkAdapter {
     func fetch(data: Data,  from url: URL) async throws -> Data
-    func send(request: URLRequest) async throws
+    func send(request: URLRequest) async throws -> Data
 }
 
 struct NetworkAdapterImpl: NetworkAdapter {
@@ -38,22 +38,25 @@ struct NetworkAdapterImpl: NetworkAdapter {
         }
         
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw NetworkError.unsuccessfulResponse(code: httpResponse.statusCode)
+            throw NetworkError.unsuccessfulResponse(code: httpResponse.statusCode + 100, payload: data)
         }
         
         return data
     }
     
-    func send(request: URLRequest) async throws {
-        let (_, response) = try await session.data(for: request)
+    func send(request: URLRequest) async throws -> Data {
+        let (data, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NetworkError.badHttpResponse
         }
         
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw NetworkError.unsuccessfulResponse(code: httpResponse.statusCode)
+            SCLogger.logger.error(message: "Response error: code: \(httpResponse.statusCode) description: \(httpResponse)", category: .Network)
+            throw NetworkError.unsuccessfulResponse(code: httpResponse.statusCode, payload: data)
         }
+        
+        return data
     }
 
     

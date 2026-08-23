@@ -260,7 +260,7 @@ const server = createServer(async (req, res) => {
 
       const user = userByID(body.userID);
       if (!user) return json(res, 404, { error: "unknown_user" });
-      if (user.status === "verified") return json(res, 409, { error: "already_verified" });
+      if (user.status === "verified") return json(res, 409, { error: "already_verified_cippa" });
 
       const since = user.otp ? Date.now() - user.otp.sentAt : Infinity;
       if (since < RESEND_COOLDOWN_MS) {

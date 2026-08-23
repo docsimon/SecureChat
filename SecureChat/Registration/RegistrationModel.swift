@@ -40,3 +40,11 @@ struct RegistrationData {
     let otpSentDate: Date?
     let registrationDate: Date?
 }
+
+// used for the payload sent by the auth server in case of error
+
+struct PayloadErrorResponse: Decodable {
+    let error: APIError
+    let attemptsRemaining: Int?
+    let retryAfterMs: Int?
+}

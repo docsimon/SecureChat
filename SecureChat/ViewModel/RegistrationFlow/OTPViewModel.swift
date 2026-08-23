@@ -32,15 +32,22 @@ final class OTPViewModel: OTPVerificationViewModel {
     
     var errorMessage: String?
     
-    func verify() async throws -> Date {
+    func verify() async -> Date {
         do {
             try await authService.verify(userID: ownerID, code: code)
             return Date()
             
+        } catch RegistrationError.invalidOTPCode(let attempts) {
+            
+            
+            //SCLogger.logger.error(message: "Invalid OTP code!", error: , category: .Registration)
+            
         } catch {
-            SCLogger.logger.error(message: "Invalid OTP code!", error: error, category: .Registration)
-            throw RegistrationError.invalidOTPCode
+            SCLogger.logger.error(message: "Transport error", error: error, category: .Registration)
         }
+           
+        //TODO: Fix this
+        return Date()
     }
     
     func resend() async {

@@ -55,7 +55,7 @@ struct OTPVerificationView<ViewModel: OTPVerificationViewModel>: View {
     @ObservedObject var viewModel: ViewModel
 
     /// Pop back to the phone-number screen. Navigation stays out of the view model.
-    var onChangePhoneNumber: () -> Void
+    var onChangePhoneNumber: () async throws -> Void
     var onContinue: (Date) async throws -> Void
 
     @FocusState private var isCodeFieldFocused: Bool
@@ -174,7 +174,9 @@ struct OTPVerificationView<ViewModel: OTPVerificationViewModel>: View {
     private var changePhoneNumberButton: some View {
         Button {
             isCodeFieldFocused = false
-            onChangePhoneNumber()
+            Task {
+               try await onChangePhoneNumber()
+            }
         } label: {
             Text("Wrong number? Change it")
                 .font(.subheadline)

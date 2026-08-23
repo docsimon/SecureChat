@@ -53,17 +53,27 @@ final class RegistrationRouterViewModel {
         }
     }
     
-    func updateRegistrationTable(phoneNumberDate: Date) throws {
+    func updateRegistrationTable(phoneNumberDate: Date?) throws {
+        guard state == .notStarted else {
+            SCLogger.logger.error(message: "Invalid State \(state) should be .notStarted", category: .Registration)
+            throw RegistrationError.invalidState(state)
+        }
         registrationRepo.update(phoneSentDate: phoneNumberDate)
+        
         state = .awaitingOTP
     }
     
-    func updateRegistrationTable(otpDate: Date) throws {
+    func updateRegistrationTable(otpDate: Date?) throws {
         registrationRepo.update(otpSentDate: otpDate)
         state = .awaitingConfirmation
     }
     
     func updateRegistrationTable(registrationDate: Date) throws {
         
+    }
+    
+    func resetPhoneNumber() throws {
+        registrationRepo.update(phoneSentDate: nil)
+        state = .notStarted
     }
 }

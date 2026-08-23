@@ -39,7 +39,11 @@ struct AuthServiceImpl: AuthService {
         
         let dto = RegistrationWithPhoneDTO(userID: userID, phone: phone, pushToken: pushToken, displayName: displayName)
         let request = try buildRequest(with: dto, endpoint: .register, httpMethod: .post)
-        try await networkAdapter.send(request: request)
+        do {
+            _ = try await networkAdapter.send(request: request)
+        } catch NetworkError.unsuccessfulResponse(let code, let payload) {
+            throw mapError(status: code, payload: payload)
+        }
     }
     
     // POST
@@ -47,20 +51,32 @@ struct AuthServiceImpl: AuthService {
         
         let dto = RegistrationWithEmailDTO(userID: userID, email: email, pushToken: pushToken, displayName: displayName)
         let request = try buildRequest(with: dto, endpoint: .register, httpMethod: .post)
-        try await networkAdapter.send(request: request)
+        do {
+            _ = try await networkAdapter.send(request: request)
+        } catch NetworkError.unsuccessfulResponse(let code, let payload) {
+            throw mapError(status: code, payload: payload)
+        }
     }
     
     // POST
     func verify(userID: UUID, code: String) async throws {
         let dto = RegistrationOTPVerificationDTO(userID: userID, code: code)
         let request = try buildRequest(with: dto, endpoint: .verify, httpMethod: .post)
-        try await networkAdapter.send(request: request)
+        do {
+            _ = try await networkAdapter.send(request: request)
+        } catch NetworkError.unsuccessfulResponse(let code, let payload) {
+            throw mapError(status: code, payload: payload)
+        }
     }
     
     func updatePhone(userID: UUID, phone: String) async throws {
         let dto = RegistrationUpdatePhone(phone: phone)
         let request = try buildRequest(with: dto, endpoint: .updatePhone(userID: userID), httpMethod: .put)
-        try await networkAdapter.send(request: request)
+        do {
+            _ = try await networkAdapter.send(request: request)
+        } catch NetworkError.unsuccessfulResponse(let code, let payload) {
+            throw mapError(status: code, payload: payload)
+        }
     }
     
     //MARK: Private methods
@@ -73,5 +89,20 @@ struct AuthServiceImpl: AuthService {
         
         return NetworkUtilities.createRequest(with: url, httpMethod: .post, httpBody: body)
     }
-    
+
+    private func mapError(status: Int, payload: Data) -> RegistrationError {
+        guard let payload: PayloadErrorResponse = try? jsonAdapter.deserialize(data: payload) else {
+            return .unexpected(status: status, code: "")
+        }
+        switch payload.error {
+        case .invalidCode:    return .invalidOTPCode(attemptsRemaining: payload.attemptsRemaining ?? 0)
+        case .resendTooSoon:  return .resendTooSoon(retryAfterMs: payload.retryAfterMs ?? 30_000)
+        case .codeExpired:    return .codeExpired
+        case .phoneRequired: return .phoneRequired
+        case .phoneTaken: return .phoneTaken
+        case .tooManyAttempts: return .tooManyAttempts
+        case .unknownUser: return .unknownUser
+        case .unknown(let raw): return .unexpected(status: status, code: raw)
+        }
+    }
 }

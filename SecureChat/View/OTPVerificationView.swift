@@ -39,7 +39,7 @@ protocol OTPVerificationViewModel: ObservableObject {
     /// Non-nil renders the inline error and puts the field in its error state.
     var errorMessage: String? { get }
 
-    func verify() async throws -> Date
+    func verify() async throws
     func resend() async
 }
 
@@ -189,8 +189,7 @@ struct OTPVerificationView<ViewModel: OTPVerificationViewModel>: View {
     private func submit() {
         isCodeFieldFocused = false
         Task {
-            let otpDate = try await viewModel.verify()
-            try await onContinue(otpDate)
+            try await viewModel.verify()
         }
     }
 }

@@ -84,7 +84,7 @@ final class ChatRepository: ChatRepositoryProtocol, ClientDelegate {
     //MARK: Client Delegate
     func onReceive(data: Data) {
         do {
-            let message: Message = try adapter.deserialize(data: data)
+            let message: Message = try adapter.deserialize(data: data, decodingStrategy: .millisecondsSince1970)
             SCLogger.logger.info(message: "Message received: \(message.content) \(message.date.description)", category: .Message)
             messageRepo.saveMessage(message: message)
         } catch {

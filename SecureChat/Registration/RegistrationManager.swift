@@ -23,25 +23,16 @@ protocol RegistrationManager {
 final class RegistrationManagerImpl: @MainActor RegistrationManager {
     let registrationRepo: RegistrationRepository
     
-    private(set) var registrationPhase: RegistrationPhase
+    private(set) var registrationPhase: RegistrationPhase = RegistrationPhase()
     
-    init(registrationRepo: RegistrationRepository, registrationPhase: RegistrationPhase = RegistrationPhase()) {
+    init(registrationRepo: RegistrationRepository) {
         self.registrationRepo = registrationRepo
-        self.registrationPhase = registrationPhase
+        // initialise the registration phase
+        initialiseRegistrationDates()
     }
 
     //MARK: Protocol RegistrationManager
         
-    var phoneNumberDate: Date? {
-        registrationRepo.phoneNumberSentDate
-    }
-    var otpDate: Date? {
-        registrationRepo.otpSentDate
-    }
-    var registrationDate: Date? {
-        registrationRepo.registrationDate
-    }
-    
     func updateRegistrationTable(phoneNumberDate: Date?) throws {
         registrationRepo.update(phoneSentDate: phoneNumberDate)
         registrationPhase.phoneNumberSentDate = phoneNumberDate
@@ -60,5 +51,13 @@ final class RegistrationManagerImpl: @MainActor RegistrationManager {
     func resetPhoneNumber() throws {
         registrationRepo.update(phoneSentDate: nil)
         registrationPhase.phoneNumberSentDate = nil
+    }
+    
+    //MARK: Private Methods
+    
+    private func initialiseRegistrationDates() {
+        registrationPhase.phoneNumberSentDate = registrationRepo.phoneNumberSentDate
+        registrationPhase.otpCodeSentDate = registrationRepo.otpSentDate
+        registrationPhase.registrationDate = registrationRepo.registrationDate
     }
 }

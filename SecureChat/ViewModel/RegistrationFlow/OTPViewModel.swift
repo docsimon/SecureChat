@@ -9,12 +9,14 @@ import SwiftUI
 
 @MainActor @Observable
 final class OTPViewModel: OTPVerificationViewModel {
-    
+   
     let authService: AuthService
+    let registrationManager: RegistrationManager
     let ownerID: UUID
    
-    init(authService: AuthService, ownerID: UUID) {
+    init(authService: AuthService, registrationManager: RegistrationManager, ownerID: UUID) {
         self.authService = authService
+        self.registrationManager = registrationManager
         self.ownerID = ownerID
     }
    
@@ -32,10 +34,10 @@ final class OTPViewModel: OTPVerificationViewModel {
     
     var errorMessage: String?
     
-    func verify() async -> Date {
+    func verify() async {
         do {
-            try await authService.verify(userID: ownerID, code: code)
-            return Date()
+            let otpCodeSentDate = try await authService.verify(userID: ownerID, code: code)
+            try registrationManager.updateRegistrationTable(otpDate: otpCodeSentDate)
             
         } catch RegistrationError.invalidOTPCode(let attempts) {
             
@@ -46,8 +48,7 @@ final class OTPViewModel: OTPVerificationViewModel {
             SCLogger.logger.error(message: "Transport error", error: error, category: .Registration)
         }
            
-        //TODO: Fix this
-        return Date()
+        
     }
     
     func resend() async {

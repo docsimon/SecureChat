@@ -9,7 +9,7 @@ import Foundation
 
 protocol JSONAdapter {
     func serialize(data: Codable) throws -> Data
-    func deserialize<T: Decodable>(data: Data) throws -> T
+    func deserialize<T: Decodable>(data: Data, decodingStrategy: JSONDecoder.DateDecodingStrategy) throws -> T
 }
 
 struct JSONAdapterImpl: JSONAdapter {
@@ -20,8 +20,9 @@ struct JSONAdapterImpl: JSONAdapter {
         return encodedData
     }
     
-    func deserialize<T: Decodable>(data: Data) throws -> T {
+    func deserialize<T: Decodable>(data: Data, decodingStrategy: JSONDecoder.DateDecodingStrategy = .millisecondsSince1970) throws -> T {
         let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = decodingStrategy
         let message = try decoder.decode(T.self, from: data)
         return message
     }

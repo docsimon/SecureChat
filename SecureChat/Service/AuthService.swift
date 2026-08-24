@@ -15,7 +15,7 @@ import Foundation
 protocol AuthService {
     func registerWithPhone(phone: String, displayName: String, userID: UUID, pushToken: String) async throws -> Date?
     func registerWithEmail(email: String, displayName: String, userID: UUID, pushToken: String) async throws
-    func verify(userID: UUID, code: String) async throws
+    func verify(userID: UUID, code: String) async throws -> Date?
     func updatePhone(userID: UUID, phone: String) async throws
 }
 
@@ -41,7 +41,7 @@ struct AuthServiceImpl: AuthService {
             let dto = RegistrationWithPhoneDTO(userID: userID, phone: phone, pushToken: pushToken, displayName: displayName)
             let request = try buildRequest(with: dto, endpoint: .register, httpMethod: .post)
             let response = try await networkAdapter.send(request: request)
-            let decodedResponse: RegistrationResponseDTO = try jsonAdapter.deserialize(data: response)
+            let decodedResponse: RegistrationResponseDTO = try jsonAdapter.deserialize(data: response, decodingStrategy: .millisecondsSince1970)
             return decodedResponse.phoneSentDate
             
         } catch NetworkError.unsuccessfulResponse(let code, let payload) {
@@ -62,11 +62,17 @@ struct AuthServiceImpl: AuthService {
     }
     
     // POST
-    func verify(userID: UUID, code: String) async throws {
-        let dto = RegistrationOTPVerificationDTO(userID: userID, code: code)
-        let request = try buildRequest(with: dto, endpoint: .verify, httpMethod: .post)
+    func verify(userID: UUID, code: String) async throws -> Date? {
+        
         do {
-            _ = try await networkAdapter.send(request: request)
+            let dto = RegistrationOTPVerificationDTO(userID: userID, code: code)
+            let request = try buildRequest(with: dto, endpoint: .verify, httpMethod: .post)
+            
+            let response = try await networkAdapter.send(request: request)
+            let decodedResponse: RegistrationResponseDTO = try jsonAdapter.deserialize(data: response, decodingStrategy: .millisecondsSince1970)
+            return decodedResponse.otpCodeSentDate
+            
+            
         } catch NetworkError.unsuccessfulResponse(let code, let payload) {
             throw mapError(status: code, payload: payload)
         }
@@ -94,7 +100,7 @@ struct AuthServiceImpl: AuthService {
     }
 
     private func mapError(status: Int, payload: Data) -> RegistrationError {
-        guard let payload: PayloadErrorResponse = try? jsonAdapter.deserialize(data: payload) else {
+        guard let payload: PayloadErrorResponse = try? jsonAdapter.deserialize(data: payload, decodingStrategy: .millisecondsSince1970) else {
             return .unexpected(status: status, code: "")
         }
         switch payload.error {

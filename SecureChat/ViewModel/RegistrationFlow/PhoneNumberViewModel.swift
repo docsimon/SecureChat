@@ -24,7 +24,10 @@ class PhoneNumberViewModel {
             let phoneRegistrationDate = try await authService.registerWithPhone(phone: phoneNumber, displayName: userName, userID: ownerID, pushToken: token)
             try registrationManager.updateRegistrationTable(phoneNumberDate: phoneRegistrationDate)
             
-        } catch {
+        } 
+        
+        
+        catch {
             SCLogger.logger.error(message: "Phone number registration failed!", error: error, category: .Registration)
             fatalError()
         }

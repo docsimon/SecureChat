@@ -21,7 +21,7 @@ struct RegistrationResponseDTO: Decodable {
     let displayName: String
     let status: RegistrationStatus     // enum with .unknown fallback
     let otpExpiresAt: Date?
-    let attemptsRemaining: Int
+    let attemptsRemaining: Int?
     let phoneSentDate: Date?
     let otpCodeSentDate: Date?
     let registeredAt: Date?

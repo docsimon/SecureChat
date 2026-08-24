@@ -91,7 +91,7 @@ final class DependencyManager {
     }
     
     @MainActor func makeOTPViewModel(ownerID: UUID) -> OTPViewModel {
-        return OTPViewModel(authService: authService, ownerID: ownerID)
+        return OTPViewModel(authService: authService,registrationManager: registrationManager, ownerID: ownerID)
     }
     
     @MainActor func makeRegistrationViewModel() -> RootViewModel {

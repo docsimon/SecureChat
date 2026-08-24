@@ -1,5 +1,5 @@
 //
-//  RouterView.swift
+//  RootView.swift
 //  SecureChat
 //
 //  Created by Simone Barbara on 14/08/2026.
@@ -7,19 +7,18 @@
 
 import SwiftUI
 
-struct RegistrationView: View {
+struct RootView: View {
     
     let dep: DependencyManager
-    let registrationViewModel: RegistrationViewModel
+    let rootViewModel: RootViewModel
     
     var body: some View {
 
-        switch registrationViewModel.registrationManager.state {
+        switch rootViewModel.state {
         case .registered:
             displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
         case .notStarted:
             displayPhoneNumberScreen(
-                registrationManager: dep.registrationManager,
                 phoneNumberViewModel: dep.makePhoneNumberViewModel(),
                 ownerID: dep.ownerID,
                 token: "12345")
@@ -34,19 +33,10 @@ struct RegistrationView: View {
 
 @ViewBuilder @MainActor
 func displayPhoneNumberScreen(
-    registrationManager: RegistrationManager,
     phoneNumberViewModel: PhoneNumberViewModel,
     ownerID: UUID,
     token: String) -> some View {
-    PhoneNumberView(
-        onContinue: { date in
-            try registrationManager.updateRegistrationTable(phoneNumberDate: date)
-        },
-        phoneNumberViewModel: phoneNumberViewModel,
-        ownerID: ownerID,
-        token: token,
-        
-    )
+    PhoneNumberView(phoneNumberViewModel: phoneNumberViewModel, ownerID: ownerID, token: token)
 }
 
 func displayOTPScreen(

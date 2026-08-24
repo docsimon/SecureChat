@@ -13,7 +13,7 @@ import Foundation
  */
 
 protocol AuthService {
-    func registerWithPhone(phone: String, displayName: String, userID: UUID, pushToken: String) async throws
+    func registerWithPhone(phone: String, displayName: String, userID: UUID, pushToken: String) async throws -> Date
     func registerWithEmail(email: String, displayName: String, userID: UUID, pushToken: String) async throws
     func verify(userID: UUID, code: String) async throws
     func updatePhone(userID: UUID, phone: String) async throws
@@ -35,12 +35,15 @@ struct AuthServiceImpl: AuthService {
     //MARK: AuthService Protocol
     
     // POST
-    func registerWithPhone(phone: String, displayName: String, userID: UUID, pushToken: String) async throws {
-        
-        let dto = RegistrationWithPhoneDTO(userID: userID, phone: phone, pushToken: pushToken, displayName: displayName)
-        let request = try buildRequest(with: dto, endpoint: .register, httpMethod: .post)
+    func registerWithPhone(phone: String, displayName: String, userID: UUID, pushToken: String) async throws -> Date {
+
         do {
-            _ = try await networkAdapter.send(request: request)
+            let dto = RegistrationWithPhoneDTO(userID: userID, phone: phone, pushToken: pushToken, displayName: displayName)
+            let request = try buildRequest(with: dto, endpoint: .register, httpMethod: .post)
+            let response = try await networkAdapter.send(request: request)
+            let decodedResponse: RegistrationResponseDTO = try jsonAdapter.deserialize(data: response)
+            return decodedResponse.registeredAt
+            
         } catch NetworkError.unsuccessfulResponse(let code, let payload) {
             throw mapError(status: code, payload: payload)
         }

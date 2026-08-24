@@ -64,7 +64,7 @@ struct Country: Identifiable, Hashable {
 struct PhoneNumberView: View {
 
     /// Called with the number in E.164 form, e.g. "+447911123456".
-    var onContinue: (Date) async throws -> Void
+   // var onContinue: (Date) async throws -> Void
     
     let phoneNumberViewModel: PhoneNumberViewModel
     let ownerID: UUID
@@ -202,7 +202,7 @@ struct PhoneNumberView: View {
             defer { isSubmitting = false }
             do {
                 let phoneNumberSentDate = try await phoneNumberViewModel.send(phoneNumber: e164, ownerID: ownerID, token: token, userName: "Simon")
-                try await onContinue(phoneNumberSentDate)
+                //////kojbhgduhuidhbdiubv
             } catch {
                 errorMessage = error.localizedDescription
             }

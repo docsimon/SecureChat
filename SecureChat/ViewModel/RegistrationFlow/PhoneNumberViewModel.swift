@@ -10,17 +10,19 @@ import SwiftUI
 class PhoneNumberViewModel {
     
     let authService: AuthService
+    let registrationManager: RegistrationManager
    
-    init(authService: AuthService) {
+    init(authService: AuthService, registrationManager: RegistrationManager) {
         self.authService = authService
+        self.registrationManager = registrationManager
     }
    
-    func send(phoneNumber: String, ownerID: UUID, token: String, userName: String) async throws -> Date {
+    func send(phoneNumber: String, ownerID: UUID, token: String, userName: String) async throws {
        
         do {
             
-            try await authService.registerWithPhone(phone: phoneNumber, displayName: userName, userID: ownerID, pushToken: token)
-            return Date()
+            let phoneRegistrationDate = try await authService.registerWithPhone(phone: phoneNumber, displayName: userName, userID: ownerID, pushToken: token)
+            try registrationManager.updateRegistrationTable(phoneNumberDate: phoneRegistrationDate)
             
         } catch {
             SCLogger.logger.error(message: "Phone number registration failed!", error: error, category: .Registration)

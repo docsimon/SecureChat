@@ -11,38 +11,27 @@
 import Foundation
 import Combine
 
-enum RegistrationState {
-    case notStarted // routes to the phone number screen
-    case awaitingOTP // routes to the otp screen
-    case awaitingConfirmation // routes to a waiting screen (with possible link to ask for a new otp)
-    case registered // routes to the chat list
-}
-
 protocol RegistrationManager {
     func updateRegistrationTable(phoneNumberDate: Date?) throws
     func updateRegistrationTable(otpDate: Date?) throws
     func updateRegistrationTable(registrationDate: Date) throws
     func resetPhoneNumber() throws
-    var phoneNumberDate: Date? { get }
-    var otpDate: Date? { get }
-    var registrationDate: Date? { get }
-    var state: RegistrationState { get set }
-    
+    var registrationPhase: RegistrationPhase { get }
 }
 
 @Observable @MainActor
 final class RegistrationManagerImpl: @MainActor RegistrationManager {
     let registrationRepo: RegistrationRepository
     
-    init(registrationRepo: RegistrationRepository) {
+    private(set) var registrationPhase: RegistrationPhase
+    
+    init(registrationRepo: RegistrationRepository, registrationPhase: RegistrationPhase = RegistrationPhase()) {
         self.registrationRepo = registrationRepo
-        state = getState
+        self.registrationPhase = registrationPhase
     }
 
     //MARK: Protocol RegistrationManager
-    
-    var state: RegistrationState = .notStarted
-    
+        
     var phoneNumberDate: Date? {
         registrationRepo.phoneNumberSentDate
     }
@@ -55,27 +44,21 @@ final class RegistrationManagerImpl: @MainActor RegistrationManager {
     
     func updateRegistrationTable(phoneNumberDate: Date?) throws {
         registrationRepo.update(phoneSentDate: phoneNumberDate)
+        registrationPhase.phoneNumberSentDate = phoneNumberDate
     }
     
     func updateRegistrationTable(otpDate: Date?) throws {
         registrationRepo.update(otpSentDate: otpDate)
+        registrationPhase.otpCodeSentDate = otpDate
     }
     
     func updateRegistrationTable(registrationDate: Date) throws {
         registrationRepo.update(registrationDate: registrationDate)
+        registrationPhase.registrationDate = registrationDate
     }
     
     func resetPhoneNumber() throws {
         registrationRepo.update(phoneSentDate: nil)
+        registrationPhase.phoneNumberSentDate = nil
     }
-    
-    //MARK: Private methods
-    
-    var getState: RegistrationState {
-        if registrationDate != nil { return .registered }
-        if otpDate != nil { return .awaitingConfirmation }
-        if phoneNumberDate != nil { return .awaitingOTP }
-        return .notStarted
-    }
-    
 }

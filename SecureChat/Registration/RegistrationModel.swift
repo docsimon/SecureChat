@@ -15,6 +15,16 @@ struct RegistrationWithPhoneDTO: Codable {
     let displayName: String
 }
 
+struct RegistrationResponseDTO: Decodable {
+    let userID: String
+    let phone: String
+    let displayName: String?
+    let status: String
+    let registeredAt: Date
+    let otpExpiresAt: Date?
+    let attemptsRemaining: Int?
+}
+
 struct RegistrationWithEmailDTO: Codable {
     let userID: UUID
     let email: String
@@ -47,4 +57,12 @@ struct PayloadErrorResponse: Decodable {
     let error: APIError
     let attemptsRemaining: Int?
     let retryAfterMs: Int?
+}
+
+// Registration dates used by the RegistrationManager to update the reigstration state in the rootViewModel
+
+struct RegistrationPhase {
+    var phoneNumberSentDate: Date?
+    var otpCodeSentDate: Date?
+    var registrationDate: Date? // this is recorded after the otp code has been verified
 }

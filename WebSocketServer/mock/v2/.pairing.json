@@ -1,68 +1,17 @@
 {
   "users": [
     {
-      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
-      "phone": "+441234123459",
-      "displayName": "Simon",
-      "pushToken": "12345",
-      "status": "pending_verification",
-      "registeredAt": null,
-      "otp": null
-    },
-    {
-      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
-      "phone": "+441234578686",
+      "userID": "509AB433-4BEA-411D-804D-24C206D3C86A",
+      "phone": "+441234111111",
       "displayName": "Simon",
       "pushToken": "12345",
       "status": "pending_verification",
       "registeredAt": null,
       "otp": {
-        "code": "953912",
-        "expiresAt": 1787321383964,
+        "code": "937205",
+        "expiresAt": 1787569078906,
         "attempts": 0,
-        "sentAt": 1787321083964
-      }
-    },
-    {
-      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
-      "phone": "+448888999999",
-      "displayName": "Simon",
-      "pushToken": "12345",
-      "status": "pending_verification",
-      "registeredAt": null,
-      "otp": {
-        "code": "449748",
-        "expiresAt": 1787321580638,
-        "attempts": 0,
-        "sentAt": 1787321280638
-      }
-    },
-    {
-      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
-      "phone": "+445555111111",
-      "displayName": "Simon",
-      "pushToken": "12345",
-      "status": "pending_verification",
-      "registeredAt": null,
-      "otp": {
-        "code": "526279",
-        "expiresAt": 1787409452906,
-        "attempts": 0,
-        "sentAt": 1787409152906
-      }
-    },
-    {
-      "userID": "52830FF7-4F4D-45D6-9A9C-6AD4C3CE8CE2",
-      "phone": "+441234598765",
-      "displayName": "Simon",
-      "pushToken": "12345",
-      "status": "pending_verification",
-      "registeredAt": null,
-      "otp": {
-        "code": "435491",
-        "expiresAt": 1787410509835,
-        "attempts": 0,
-        "sentAt": 1787410209835
+        "sentAt": 1787568778906
       }
     }
   ],

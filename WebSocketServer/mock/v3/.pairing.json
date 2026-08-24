@@ -1,0 +1,17 @@
+{
+  "users": [
+    {
+      "userID": "509AB433-4BEA-411D-804D-24C206D3C86A",
+      "phone": "+441111222222",
+      "displayName": "Simon",
+      "pushToken": "12345",
+      "status": "verified",
+      "phoneSentAt": 1787570597810,
+      "otpCodeSentAt": 1787570597820,
+      "registeredAt": 1787570610457,
+      "otp": null
+    }
+  ],
+  "invites": [],
+  "chats": []
+}

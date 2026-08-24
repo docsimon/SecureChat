@@ -16,13 +16,30 @@ struct RegistrationWithPhoneDTO: Codable {
 }
 
 struct RegistrationResponseDTO: Decodable {
-    let userID: String
+    let userID: UUID
     let phone: String
-    let displayName: String?
-    let status: String
-    let registeredAt: Date
+    let displayName: String
+    let status: RegistrationStatus     // enum with .unknown fallback
     let otpExpiresAt: Date?
-    let attemptsRemaining: Int?
+    let attemptsRemaining: Int
+    let phoneSentDate: Date?
+    let otpCodeSentDate: Date?
+    let registeredAt: Date?
+}
+
+enum RegistrationStatus: Decodable {
+    case pendingVerification
+    case verified
+    case unknown(String)
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "pending_verification": self = .pendingVerification
+        case "verified":             self = .verified
+        default:                     self = .unknown(raw)
+        }
+    }
 }
 
 struct RegistrationWithEmailDTO: Codable {

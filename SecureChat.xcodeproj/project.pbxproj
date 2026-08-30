@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = CA70F2A42EA3BEAA0098F0F9 /* SQLite */; };
+		CABD5C8D30442E240041D0B0 /* AppAttestKit in Frameworks */ = {isa = PBXBuildFile; productRef = CABD5C8C30442E240041D0B0 /* AppAttestKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,6 +57,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CABD5C8D30442E240041D0B0 /* AppAttestKit in Frameworks */,
 				CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -83,6 +85,7 @@
 				CA2506122E8D7367004381A3 /* SecureChat */,
 				CA2506202E8D736A004381A3 /* SecureChatTests */,
 				CA25062A2E8D736A004381A3 /* SecureChatUITests */,
+				CABD5C8B30442E240041D0B0 /* Frameworks */,
 				CA2506112E8D7367004381A3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -95,6 +98,13 @@
 				CA2506272E8D736A004381A3 /* SecureChatUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		CABD5C8B30442E240041D0B0 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -118,6 +128,7 @@
 			name = SecureChat;
 			packageProductDependencies = (
 				CA70F2A42EA3BEAA0098F0F9 /* SQLite */,
+				CABD5C8C30442E240041D0B0 /* AppAttestKit */,
 			);
 			productName = SecureChat;
 			productReference = CA2506102E8D7367004381A3 /* SecureChat.app */;
@@ -603,6 +614,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CA70F2A32EA3BEAA0098F0F9 /* XCRemoteSwiftPackageReference "SQLite.swift" */;
 			productName = SQLite;
+		};
+		CABD5C8C30442E240041D0B0 /* AppAttestKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AppAttestKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

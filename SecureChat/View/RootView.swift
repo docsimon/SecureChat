@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppAttestKit
 
 struct RootView: View {
     
@@ -13,9 +14,9 @@ struct RootView: View {
     let rootViewModel: RootViewModel
     
     var body: some View {
-
         switch rootViewModel.state {
         case .registered:
+            
             displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
         case .notStarted:
             displayPhoneNumberScreen(

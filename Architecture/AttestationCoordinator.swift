@@ -110,6 +110,22 @@ public actor AttestationCoordinator: AssertionSigning {
         }
     }
 
+    #if DEBUG
+    /// Harness only. Wipes persisted state so a full attestation can be re-run.
+    ///
+    /// ⚠️ This does NOT give you unlimited test runs. Key generation is capped
+    /// per device per App ID for the device's lifetime, so every reset-and-retry
+    /// consumes part of a finite budget. Use the package's mock-based tests for
+    /// iteration; use this sparingly to confirm real-API behaviour.
+    ///
+    /// Compile-time gated, NOT a runtime flag — a runtime bypass that ships is a
+    /// bypass that gets found. See architecture doc §8.
+    public func debugReset() {
+        try? store.clear()
+        transition(to: .none)
+    }
+    #endif
+
     // MARK: AssertionSigning
     //
     // The HOT PATH — runs on every authenticated request, forever.

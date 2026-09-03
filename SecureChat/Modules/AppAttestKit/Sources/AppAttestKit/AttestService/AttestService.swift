@@ -8,7 +8,9 @@
 import Foundation
 import DeviceCheck
 
-public protocol AttestServicing: Sendable {
+/// Seam over `DCAppAttestService`, which is a concrete class that cannot be
+/// subclassed or stubbed and only returns errors on real hardware.
+protocol AttestServicing: Sendable {
     var isSupported: Bool { get }
     func generateKey() async throws -> String
     func attestKey(_ keyId: String, clientDataHash: Data) async throws -> Data
@@ -16,8 +18,7 @@ public protocol AttestServicing: Sendable {
 }
 
 
-
-public struct AttestService: AttestServicing {
+struct AttestService: AttestServicing {
     
     public init() {}
     

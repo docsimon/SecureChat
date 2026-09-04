@@ -5,7 +5,6 @@
 //  Created by Simone Barbara on 30/08/2026.
 //
 
-
 import Foundation
 
 /// The module's single entry point, and the only stateful thing in it.
@@ -24,22 +23,30 @@ import Foundation
 /// See module doc §4.
 public actor AttestationCoordinator: AssertionSigning {
 
-    enum Policy {
-        static let maxAttempts = 5
+    /// Internal and injectable so tests can run with zero backoff. Not public:
+    /// retry behaviour is module policy, and exposing it would invite the app to
+    /// build a competing retry loop alongside this one.
+    struct Policy: Sendable {
+        var maxAttempts: Int = 5
         /// Persisted across launches. Bounds the ONE case where regenerating a
-        /// key is legitimate, so a bug cannot loop and exhaust the device budget.
-        static let maxKeyRegenerations = 3
-        /// Nanoseconds, not `Duration` — `Duration` and `Task.sleep(for:)`
-        /// are iOS 16+, and this package targets iOS 14.
-        static func backoffNanos(attempt: Int) -> UInt64 {
-            UInt64(min(pow(2.0, Double(attempt)), 60) * 1_000_000_000)
+        /// key is legitimate, so a crash-loop cannot exhaust the device budget.
+        var maxKeyRegenerations: Int = 3
+        /// Exponential, capped at 60s. `Duration` is iOS 16+, available now
+        /// that the floor is 17.
+        var backoff: @Sendable (Int) -> Duration = { attempt in
+            .seconds(min(pow(2.0, Double(attempt)), 60))
         }
+
+        static let `default` = Policy()
+        /// Tests only — real sleeps would make the suite take minutes.
+        static let immediate = Policy(backoff: { _ in .zero })
     }
 
     private let service: AttestServicing
     private let store: AttestationKeyStore
     private let transport: AttestationTransport
     private let observer: AttestationObserver?
+    private let policy: Policy
 
     private var state: AttestationState = .none
     private var inFlight: Task<AttestationState, Error>?
@@ -52,21 +59,24 @@ public actor AttestationCoordinator: AssertionSigning {
     /// Production. The app supplies only what is genuinely app-specific.
     /// Note it CANNOT inject a service or store — that is the point.
     public init(transport: AttestationTransport, observer: AttestationObserver? = nil) {
-        self.init(service: AttestService(),
+        self.init(service: LiveAttestService(),
                   store: DefaultKeyStore(),
                   transport: transport,
-                  observer: observer)
+                  observer: observer,
+                  policy: .default)
     }
 
     /// Tests. Internal — reachable via `@testable import AppAttestKit`.
     init(service: AttestServicing,
          store: AttestationKeyStore,
          transport: AttestationTransport,
-         observer: AttestationObserver?) {
+         observer: AttestationObserver?,
+         policy: Policy = .default) {
         self.service = service
         self.store = store
         self.transport = transport
         self.observer = observer
+        self.policy = policy
     }
 
     // MARK: Public API — this is the app's entire surface
@@ -156,6 +166,16 @@ public actor AttestationCoordinator: AssertionSigning {
     private func run(binding: @Sendable @escaping (Data) throws -> Data) async throws -> AttestationState {
         if state.isAttested { return state }
 
+        // Read the STORE, not just in-memory state. An app that calls
+        // ensureAttested() without restore() first would otherwise load the
+        // persisted keyId, skip generation, and re-attest a ONE-SHOT key —
+        // burning a key regeneration on every launch.
+        if (try? store.loadIsAttested()) == true,
+           let keyId = (try? store.loadKeyId()) ?? nil {
+            transition(to: .attested(keyId: keyId))
+            return state
+        }
+
         guard service.isSupported else {
             let error = AttestationError.unsupported
             observer?.didFail(error, attempt: 0)
@@ -164,14 +184,14 @@ public actor AttestationCoordinator: AssertionSigning {
         }
 
         var attempt = 0
-        while attempt < Policy.maxAttempts {
+        while attempt < policy.maxAttempts {
             do {
                 return try await attemptRegistration(binding: binding)
             } catch let error as AttestationError where error.requiresNewKey {
                 // The ONLY branch where a new key is legitimate. Bounded, and the
                 // bound is persisted so a crash-loop cannot bypass it.
                 let used = (try? store.loadRegenerationCount()) ?? 0
-                guard used < Policy.maxKeyRegenerations else {
+                guard used < policy.maxKeyRegenerations else {
                     observer?.didFail(.exhausted, attempt: attempt)
                     throw AttestationError.exhausted
                 }
@@ -185,7 +205,7 @@ public actor AttestationCoordinator: AssertionSigning {
                 // Retry with the SAME keyId. Never regenerate here.
                 attempt += 1
                 observer?.didFail(error, attempt: attempt)
-                try await Task.sleep(nanoseconds: Policy.backoffNanos(attempt: attempt))
+                try await Task.sleep(for: policy.backoff(attempt))
 
             } catch let error as AttestationError {
                 observer?.didFail(error, attempt: attempt)
@@ -219,8 +239,15 @@ public actor AttestationCoordinator: AssertionSigning {
         // STEP 5 — challenge. ~15 min TTL, longer than session challenges,
         // because the attestation we cache below is bound to it.
         let challenge: Data
-        do { challenge = try await transport.fetchChallenge() }
-        catch { throw AttestationError.networkUnavailable }
+        do {
+            challenge = try await transport.fetchChallenge()
+        } catch let error as AttestationError {
+            // Pass through unchanged. Coercing everything to .networkUnavailable
+            // would turn a terminal .serverRejected into an infinite retry loop.
+            throw error
+        } catch {
+            throw AttestationError.networkUnavailable
+        }
 
         // STEP 6 — the APP builds the binding. This is the step that makes the
         // whole scheme work: the App Attest key signs over a hash CONTAINING the

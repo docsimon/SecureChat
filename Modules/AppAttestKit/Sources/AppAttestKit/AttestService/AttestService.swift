@@ -18,8 +18,12 @@ protocol AttestServicing: Sendable {
 }
 
 
-struct AttestService: AttestServicing {
-    
+/// Live implementation — thin pass-through to `DCAppAttestService.shared`.
+/// Named `Live...` (not just `AttestService`) to read clearly next to the
+/// mock used in tests, and to avoid being confused with the `AttestServicing`
+/// protocol it conforms to.
+struct LiveAttestService: AttestServicing {
+
     public init() {}
     
     //MARK: AttestServicing Protocol

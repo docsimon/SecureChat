@@ -60,7 +60,7 @@ public actor AttestationCoordinator: AssertionSigning {
     /// Note it CANNOT inject a service or store — that is the point.
     public init(transport: AttestationTransport, observer: AttestationObserver? = nil) {
         self.init(service: LiveAttestService(),
-                  store: DefaultKeyStore(),
+                  store: LiveKeyStore(),
                   transport: transport,
                   observer: observer,
                   policy: .default)

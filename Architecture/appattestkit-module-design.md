@@ -2,7 +2,7 @@
 
 Companion to `architecture-decisions.md`. Covers the extraction of registration logic into a reusable, testable module.
 
-Status: design agreed, not yet implemented. One blocker before starting (see §8). Last updated 2026-08-26.
+Status: design agreed. §8's blocker is resolved — no re-attestation. Last updated 2026-09-18.
 
 ---
 
@@ -183,18 +183,22 @@ Client behaviour: discard the `keyId`, generate a fresh one, re-attest.
 
 ---
 
-## 8. ⚠️ BLOCKER — re-attestation server contract
+## 8. Resolved — no server-side re-attestation
 
-**Resolve before writing the module.** It changes the interface the module talks to.
+**Decision: `.keyInvalid` always means a new account. No re-attestation path exists or is planned.** Full trade-off analysis in `account-keys-reference.md`; logged in `architecture-decisions.md` §12.
 
-`/register` is currently idempotent **keyed on `keyId`** (architecture doc §6). A user whose key was invalidated returns with a **new keyId and the same identity public key**. Under the current contract that either creates a duplicate account or is rejected outright.
+`/register` stays exactly as specced — idempotent on `keyId`, nothing more. There is no `/reattest` endpoint. The deciding constraint: the server discards `identityPublicKey` immediately after the nonce-binding check (workflow doc step 10) and never persists it — this is deliberate (architecture doc §10: it's the most graph-linkable value the server could hold). Any scheme that rebinds a new `keyId` to an existing account requires the server to retain `identityPublicKey` (or a derivative of it) indefinitely as a lookup index, which reverses that decision. Preserving it was judged more valuable than preserving an account across a rare App-Attest-only key failure.
 
-The server needs a defined re-attestation path: accept a new `keyId` bound to an existing identity key, **provided the client proves possession of that identity key by signing the challenge with it.**
+**Client behaviour on `.keyInvalid`:** the regenerate-and-reattest path already implemented in `AttestationCoordinator` (§6/§7) needs no code change — discard `keyId`, generate a new one, reattest. What it produces is a **new account**, not a recovered one. The app layer must:
+- run a completely fresh `/register`, minting a new `account_uuid`
+- **keep the existing X25519 identity keypair** rather than generating a new one alongside it (see below)
+- surface to the user that every contact needs to be re-paired — there is no server-mediated way for a contact to learn the new `account_uuid`, since the product has no discovery/directory (architecture doc §1)
 
-Open sub-questions:
-- Does the identity key persist across the events that invalidate an App Attest key? (Both live in Keychain, so probably yes — but a device restore may behave differently and needs verifying.)
-- If the identity key is *also* lost, the user is a new user and must re-pair. Is that acceptable, and how is it surfaced?
-- Rate limit re-attestation separately, since it is otherwise an account-takeover surface.
+**Why the identity key is kept, not regenerated:** architecture doc §10 already establishes "pairings are the durable identifier, not the UUID" — the identity key, not the account UUID, is what a contact actually trusts (it's what the SAS/fingerprint is derived from). Keeping it means a contact re-pairing after this event sees the *same* fingerprint they already recognise — reconnecting with someone they know, not re-verifying a stranger. The account UUID was always disposable routing plumbing; nothing is lost by discarding it on its own.
+
+Cost of this choice, recorded so it isn't rediscovered later: the same `identityPublicKey` appears in two separate `/register` request bodies over time (once per account). Since the server never persists it, this isn't a stored correlation — but it is a narrow one at the infrastructure-logging layer (load balancer / reverse proxy / WAF logs, already flagged as out of app control in architecture doc §10) if a live adversary correlates both requests. Judged acceptable, and smaller in blast radius than the rejected re-attestation alternative.
+
+**No longer open:** the two sub-questions this section used to list (does the identity key survive the same event that kills the App Attest key; what happens if it's also lost) are moot under this decision — the identity key's survival is now a *goal* the app enforces directly (never deleted except on deliberate factory-reset/logout), not a fact to verify about Apple's behaviour. If the identity key is lost for some unrelated reason, the fallback is identical: new account, new identity, full re-pair.
 
 ---
 
@@ -254,7 +258,7 @@ Recorded so the reasoning is not re-derived.
 | `transient(retryAfter:)` unpopulatable | Removed; backoff is local policy (§6) |
 | `keyRateLimited` possibly indistinguishable | Collapsed to coarse rule; verify codes first (§6) |
 | Key invalidation unhandled | Added §7; surfaced server contract gap |
-| Server contract breaks on re-attestation | **Blocker, §8** |
+| Server contract breaks on re-attestation | Resolved — re-attestation rejected, `.keyInvalid` mints a new account instead (§8) |
 | No persistence seam — state machine untestable | Added `AttestationKeyStore` (§3) |
 | Testing payoff overstated | Scoped honestly in §9 |
 | Silent failures invisible in field | Added `AttestationObserver` (§3) |

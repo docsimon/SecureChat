@@ -2,7 +2,7 @@
 
 Context document for reuse across conversations. Captures decisions made, the reasoning behind them, and what is explicitly deferred or rejected.
 
-Status: pre-launch, no live users. Last updated 2026-08-26.
+Status: pre-launch, no live users. Last updated 2026-09-18.
 
 ---
 
@@ -10,7 +10,7 @@ Status: pre-launch, no live users. Last updated 2026-08-26.
 
 Privacy-focused iOS chat app. Core constraints, treated as fixed:
 
-- **Manual pairing only** — BLE, NFC, or shared link. No discovery, no directory, no username search.
+- **Manual pairing only** — BLE or NFC for v1 (a shared-link method was considered and deferred — see `pairing-workflow.md`). No discovery, no directory, no username search.
 - **No server-side message storage.** Messages exist in transit and on the two devices, nowhere else.
 - **Both parties must be online.** No offline delivery, no store-and-forward.
 - **Local storage encrypted.**
@@ -327,11 +327,11 @@ With these, swapping in a derived rendezvous ID later is a client-side change pl
 
 ### Pairing channel
 
-Proximity is not authentication. BLE relay attacks are practical; a shared link sent over WhatsApp is a bearer token on a channel you do not control.
+Proximity is not authentication. BLE relay attacks are practical — an attacker with two radios can relay handshake traffic between two victims who each believe they're pairing directly with each other, completing two independently valid handshakes with the attacker in the middle. This is why SAS confirmation (below) applies to BLE/NFC pairing itself, not just to the shared-link method that was deferred.
 
-**Mitigation: short authentication string.** After the handshake, derive a few words or emoji from both identity keys and have both users compare them. Defeats MITM even against a fully compromised server. This is what makes "the server cannot lie about identities" true rather than aspirational.
+**Mitigation: short authentication string (SAS).** After the handshake, derive a few words or emoji from both parties' identity keys and have both users compare them out of band (read aloud, or eyes on both screens). Defeats MITM even against a fully compromised server or a relayed BLE/NFC connection — this is what makes "the server cannot lie about identities" true rather than aspirational. Full protocol, including the commitment-ordering requirement this needs to be secure against an adaptive attacker, in `pairing-workflow.md`.
 
-For links: single-use, minutes-long TTL, high entropy. Any key material goes in the **URL fragment** so it never reaches server logs.
+**Deferred: shared-link pairing.** Considered for v1 and dropped in favour of BLE/NFC only, which need no rendezvous infrastructure at all (§1) — pairing has zero server involvement as a result. If revisited: single-use, minutes-long TTL, high entropy. Any key material goes in the **URL fragment** so it never reaches server logs.
 
 ### Local storage
 
@@ -388,3 +388,5 @@ A server compromise yields: future metadata, IP correlation, and the ability to 
 | Scaling | Single relay instance as long as possible |
 | Media | Out of scope for v1; version byte reserves the upgrade path |
 | Abuse handling | Client-side unpair/block is the primary remedy, not server bans |
+| Re-attestation on `.keyInvalid` | Rejected. A new App Attest key always mints a new account rather than rebinding the old one — the alternative would require the server to retain `identityPublicKey` indefinitely as a lookup key, reversing the "discard it after registration" decision above. The X25519 identity keypair is kept across the new registration for trust continuity (contacts see the same fingerprint on re-pair). See `appattestkit-module-design.md` §8, `account-keys-reference.md`. |
+| Pairing transport | BLE/NFC only for v1; shared-link pairing considered and deferred (no rendezvous infrastructure needed). SAS confirmation is a hard gate, not a soft "unverified" warning. Default display name reuses the identicon word-triple. See `pairing-workflow.md`. |

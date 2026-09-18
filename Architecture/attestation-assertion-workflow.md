@@ -198,26 +198,20 @@ Amortise: verify once at WebSocket handshake, then use the session token. Do not
 
 ---
 
-## Part 3 — Re-attestation ⚠️ BLOCKED
+## Part 3 — `.keyInvalid` recovery (re-attestation rejected)
 
 Triggered by `DCError.invalidKey` — Keychain cleared, device restored from backup, or key otherwise invalidated.
 
-**Client side (implementable now):**
+**Decision (module doc §8): no re-attestation path.** A new `keyId` always produces a new account, never a rebind of the old one. This keeps `/register` exactly as specced — idempotent on `keyId`, `identityPublicKey` discarded after the nonce check in step 10 — rather than requiring the server to retain `identityPublicKey` indefinitely as a re-attestation lookup key. Full reasoning in `account-keys-reference.md`.
 
-1. Discard the stored `keyId`, clear cached attestation
-2. Generate a new App Attest key
-3. Re-attest, binding the **same** identity public key
-4. Prove possession by signing the challenge with the identity private key
-5. Submit as a re-attestation rather than a fresh registration
+**Client behaviour, entirely app-side, no server contract change:**
 
-**Server side (blocked):** `/register` is idempotent on `keyId`. A returning user arrives with a *new* `keyId` and the *same* identity key — currently that produces a duplicate account or a rejection.
+1. Discard the stored `keyId`, clear cached attestation (`AttestationCoordinator` already does this — module doc §6/§7)
+2. Generate a new App Attest key, reattest, run a completely fresh `/register` — the result is a brand-new `account_uuid`
+3. **Do not discard the existing X25519 identity keypair.** It carries the user's actual trust relationships (architecture doc §10: "pairings are the durable identifier, not the UUID") and stays in place across this event
+4. Surface to the user that every contact must be re-paired — there is no server-mediated way for a contact to learn the new `account_uuid` (no discovery/directory, architecture doc §1). Re-pairing with the *same* identity key means contacts see the same fingerprint they already trust, rather than a stranger's
 
-Needs: accept a new `keyId` bound to an existing identity key, gated on proof of possession of the identity private key.
-
-Open sub-questions (module doc §8):
-- Does the identity key survive the events that invalidate an App Attest key? Both are in Keychain, so probably — but device restore needs verifying.
-- If the identity key is *also* lost, the user is new and must re-pair. Acceptable? How is it surfaced?
-- Rate-limit re-attestation separately; it is otherwise an account-takeover surface.
+No server-side work follows from this path — the re-attestation concept is retired, not deferred.
 
 ---
 

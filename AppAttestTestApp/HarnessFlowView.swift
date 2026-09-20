@@ -1,17 +1,18 @@
 //
-//  MockHarnessFlowView.swift
+//  HarnessFlowView.swift
 //  AppAttestTestApp
 //
-//  Fake-data preview of the guided-sequence redesign — NOT wired to
-//  AppAttestKit or any real Apple call. Purely for evaluating the UX before
-//  committing to wiring it for real. HarnessView.swift / HarnessModel.swift
-//  (the still-intact, working real harness) are untouched by this file.
+//  Real version of the guided-sequence UX, approved via
+//  MockHarnessFlowView's fake-data preview. Wired to HarnessFlowModel —
+//  real AttestationCoordinator, real DCAppAttestService calls, under the
+//  development App Attest environment (safe for repeated real-device
+//  testing). LocalFakeTransport still stands in for the Auth Server.
 //
 
 import SwiftUI
 
-struct MockHarnessFlowView: View {
-    @State private var model = MockHarnessFlowModel()
+struct HarnessFlowView: View {
+    @State private var model = HarnessFlowModel()
 
     var body: some View {
         NavigationStack {
@@ -23,7 +24,7 @@ struct MockHarnessFlowView: View {
                         StepRow(
                             number: 1,
                             title: "Generate Identity Key",
-                            subtitle: model.fakeIdentityPrefix.map { "public key: \($0)…" },
+                            subtitle: model.identityPublicKeyPrefix.map { "public key: \($0)…" },
                             state: identityState,
                             action: { Task { await model.generateIdentity() } }
                         )
@@ -58,11 +59,14 @@ struct MockHarnessFlowView: View {
                     }
                     .buttonStyle(.plain)
 
-                    DisclosureGroup("Preview scenarios") {
+                    DisclosureGroup("Danger zone") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Button("Simulate a failure") { model.simulateFailure() }
-                            Button("Reset module state", role: .destructive) { model.resetModuleState() }
-                            Button("Delete identity key", role: .destructive) { model.deleteIdentityKey() }
+                            Button("Reset module state", role: .destructive) {
+                                Task { await model.resetModuleState() }
+                            }
+                            Button("Delete identity key", role: .destructive) {
+                                model.deleteIdentityKey()
+                            }
                         }
                         .padding(.top, 8)
                     }
@@ -71,8 +75,9 @@ struct MockHarnessFlowView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Attest Harness (Preview)")
+            .navigationTitle("Attest Harness")
         }
+        .task { await model.restoreOnAppear() }
     }
 
     private var banner: some View {
@@ -80,11 +85,16 @@ struct MockHarnessFlowView: View {
             Text("state: \(model.stateLabel)")
                 .font(.system(.footnote, design: .monospaced))
             Spacer()
-            Text("MOCK — no real Apple calls")
-                .font(.caption2.bold())
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color.orange.opacity(0.2), in: Capsule())
-                .foregroundStyle(.orange)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("DEV SANDBOX")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.green.opacity(0.2), in: Capsule())
+                    .foregroundStyle(.green)
+                Text("\(model.realAttemptCount) real attempts")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -106,5 +116,5 @@ struct MockHarnessFlowView: View {
 }
 
 #Preview {
-    MockHarnessFlowView()
+    HarnessFlowView()
 }

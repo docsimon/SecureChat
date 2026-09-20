@@ -20,24 +20,29 @@
 import Foundation
 import AppAttestKit
 
-/// Every call is logged through `onEvent` so the harness UI can show exactly
-/// what the module attempted to send, without needing a real endpoint to
-/// receive it.
+/// Deliberately does NOT expose `AttestationSubmission.keyId` through this
+/// event type at all — not even truncated. Once this transport is driven by
+/// real data, `keyId` is a real, persistent App Attest key identifier, and
+/// architecture doc §10 is explicit that it must never reach a log. Making
+/// that structurally impossible (rather than "remember not to log it") is
+/// the point of this enum, not a style choice.
+enum TransportEvent: Sendable {
+    case challengeFetched(byteCount: Int)
+    case submitted(accountUUID: String)
+}
+
 struct LocalFakeTransport: AttestationTransport {
-    let onEvent: @Sendable (String) -> Void
+    let onEvent: @Sendable (TransportEvent) -> Void
 
     func fetchChallenge() async throws -> Data {
         let challenge = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
-        onEvent("fake /challenge → \(challenge.count) random bytes")
+        onEvent(.challengeFetched(byteCount: challenge.count))
         return challenge
     }
 
     func submitAttestation(_ request: AttestationSubmission) async throws -> String {
         let fakeAccountUUID = UUID().uuidString
-        onEvent("environment: \(AttestationEnvironmentHint.describe(request.attestation))")
-        onEvent("fake /register ← keyId hash \(request.keyId.prefix(8))…, "
-                + "attestation \(request.attestation.count) bytes")
-        onEvent("fake /register → account \(fakeAccountUUID)")
+        onEvent(.submitted(accountUUID: fakeAccountUUID))
         return fakeAccountUUID
     }
 }

@@ -34,6 +34,18 @@ enum IdentityKeyStore {
         return key
     }
 
+    /// Read-only — never generates. Needed so the UI can correctly reflect
+    /// "identity already exists" on launch (e.g. after a real kill-and-
+    /// relaunch) without silently creating one just by checking.
+    static func exists() -> Bool {
+        // Since Swift 5 (SE-0230), `try?` on a call that already returns an
+        // optional flattens automatically — no double-optional here. A
+        // thrown error and a genuine "no key stored" both collapse to nil,
+        // which is fine for this check: either way, the answer is "no
+        // identity key to reflect in the UI yet."
+        (try? load()) != nil
+    }
+
     private static func load() throws -> Curve25519.KeyAgreement.PrivateKey? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

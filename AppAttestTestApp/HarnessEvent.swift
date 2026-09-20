@@ -24,26 +24,32 @@ struct HarnessEvent: Identifiable {
         // response from Apple's own servers (the CBOR attestation object);
         // the challenge fetch and registration submission hit YOUR Auth
         // Server (architecture-decisions.md §6), a third, separate party.
+        case restored = "Restored (local)"
         case identityKeyGenerated = "Identity Key Generated (local)"
         case attestationStarted = "Attestation Started"
         case attestationStepChallenge = "Challenge Fetched (Auth Server)"
         case attestationStepKeyGenerated = "App Attest Key Generated (local)"
         case attestationStepAttested = "Attestation Received (Apple)"
         case attestationStepSubmitted = "Submitted (Auth Server)"
+        case identityKeyGenerationFailed = "Identity Key Generation Failed"
         case attestationFailed = "Attestation Failed"
+        case signFailed = "Sign Failed"
         case assertionSigned = "Assertion Signed (local)"
         case moduleReset = "Module State Reset"
         case identityKeyDeleted = "Identity Key Deleted"
 
         var systemImage: String {
             switch self {
+            case .restored: return "arrow.clockwise"
             case .identityKeyGenerated: return "person.badge.key"
             case .attestationStarted: return "play.circle"
             case .attestationStepChallenge: return "number"
             case .attestationStepKeyGenerated: return "key"
             case .attestationStepAttested: return "checkmark.seal"
             case .attestationStepSubmitted: return "arrow.up.doc"
+            case .identityKeyGenerationFailed: return "exclamationmark.triangle"
             case .attestationFailed: return "exclamationmark.triangle"
+            case .signFailed: return "exclamationmark.triangle"
             case .assertionSigned: return "signature"
             case .moduleReset: return "arrow.counterclockwise"
             case .identityKeyDeleted: return "trash"

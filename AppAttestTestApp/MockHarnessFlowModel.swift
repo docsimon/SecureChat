@@ -25,7 +25,11 @@ final class MockHarnessFlowModel {
     private(set) var attested = false
     private(set) var activeStep: ActiveStep = .none
     private(set) var fakeIdentityPrefix: String?
-    var history: [HarnessEvent] = []
+
+    /// One entry per attempt. "Reset module state" and "Delete identity key"
+    /// close out the current session (as its last event) and open a fresh
+    /// one — see HarnessSession.swift.
+    var sessions: [HarnessSession] = [HarnessSession()]
 
     var stateLabel: String {
         if attested { return "attested" }
@@ -53,24 +57,25 @@ final class MockHarnessFlowModel {
 
         try? await Task.sleep(for: .milliseconds(300))
         let challenge = Self.randomHex(16)
-        log(.attestationStepChallenge, summary: "challenge fetched (32 bytes)",
+        log(.attestationStepChallenge, summary: "GET /challenge → 32 random bytes",
             detail: [DetailField(label: "Challenge", value: challenge)])
 
         try? await Task.sleep(for: .milliseconds(300))
         let fakeKeyId = Self.randomHex(16)
-        log(.attestationStepKeyGenerated, summary: "App Attest key generated",
+        log(.attestationStepKeyGenerated, summary: "App Attest key generated — no network involved",
             detail: [DetailField(label: "keyId (hash)", value: fakeKeyId)])
 
         try? await Task.sleep(for: .milliseconds(500))
-        log(.attestationStepAttested, summary: "attested with Apple (312 bytes)",
+        log(.attestationStepAttested, summary: "CBOR attestation object received (312 bytes)",
             detail: [
-                DetailField(label: "Attestation size", value: "312 bytes"),
+                DetailField(label: "Format", value: "CBOR — {fmt, attStmt, authData}"),
+                DetailField(label: "Attestation object size", value: "312 bytes"),
                 DetailField(label: "aaguid", value: "(placeholder — see AttestationEnvironmentHint.swift for the real extractor)")
             ])
 
         try? await Task.sleep(for: .milliseconds(300))
         let uuid = UUID().uuidString
-        log(.attestationStepSubmitted, summary: "submitted to server",
+        log(.attestationStepSubmitted, summary: "POST /register → Auth Server",
             detail: [DetailField(label: "Account UUID", value: uuid)])
 
         attested = true
@@ -94,6 +99,7 @@ final class MockHarnessFlowModel {
     func resetModuleState() {
         attested = false
         log(.moduleReset, summary: "module state cleared — identity key kept, matches Option A")
+        startNewSession()
     }
 
     func deleteIdentityKey() {
@@ -101,10 +107,16 @@ final class MockHarnessFlowModel {
         attested = false
         fakeIdentityPrefix = nil
         log(.identityKeyDeleted, summary: "identity key deleted — next run starts fully fresh")
+        startNewSession()
     }
 
     private func log(_ kind: HarnessEvent.Kind, summary: String, detail: [DetailField] = [], isError: Bool = false) {
-        history.insert(HarnessEvent(kind: kind, timestamp: Date(), summary: summary, detail: detail, isError: isError), at: 0)
+        let event = HarnessEvent(kind: kind, timestamp: Date(), summary: summary, detail: detail, isError: isError)
+        sessions[sessions.count - 1].events.append(event)
+    }
+
+    private func startNewSession() {
+        sessions.append(HarnessSession())
     }
 
     private static func randomHex(_ byteCount: Int) -> String {

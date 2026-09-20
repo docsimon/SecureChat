@@ -2,40 +2,59 @@
 //  HarnessHistoryListView.swift
 //  AppAttestTestApp
 //
+//  Top-level history screen: one row per attempt (session), not one row per
+//  step — drill into a session for its chronological trace.
+//
 
 import SwiftUI
 
 struct HarnessHistoryListView: View {
-    let events: [HarnessEvent]
+    let sessions: [HarnessSession]
+
+    /// (originalNumber, session) pairs, non-empty only, newest attempt
+    /// first — a run-history convention, unlike the chronological
+    /// oldest-first ordering used *within* a session's own trace.
+    private var numberedSessions: [(number: Int, session: HarnessSession)] {
+        Array(sessions.enumerated())
+            .filter { !$0.element.events.isEmpty }
+            .map { (number: $0.offset + 1, session: $0.element) }
+            .reversed()
+    }
 
     var body: some View {
         Group {
-            if events.isEmpty {
-                ContentUnavailableView("No events yet", systemImage: "clock",
-                    description: Text("Run through the steps to populate history."))
+            if numberedSessions.isEmpty {
+                ContentUnavailableView("No sessions yet", systemImage: "clock",
+                    description: Text("Run through the steps to start one."))
             } else {
-                List(events) { event in
-                    NavigationLink(destination: HarnessHistoryDetailView(event: event)) {
-                        row(for: event)
+                List(numberedSessions, id: \.session.id) { entry in
+                    NavigationLink(destination: HarnessSessionDetailView(session: entry.session, number: entry.number)) {
+                        row(for: entry.session, number: entry.number)
                     }
                 }
             }
         }
-        .navigationTitle("History")
+        .navigationTitle("Sessions")
     }
 
-    private func row(for event: HarnessEvent) -> some View {
+    private func row(for session: HarnessSession, number: Int) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: event.kind.systemImage)
-                .foregroundStyle(event.isError ? .red : .accentColor)
+            Image(systemName: session.outcomeSystemImage)
+                .foregroundStyle(session.outcomeColor)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.kind.rawValue).font(.subheadline).bold()
-                Text(event.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text("Session \(number)").font(.subheadline).bold()
+                Text(session.outcomeLabel).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Text(event.timestamp.formatted(date: .omitted, time: .standard))
-                .font(.caption2).foregroundStyle(.tertiary)
+            VStack(alignment: .trailing, spacing: 2) {
+                if let started = session.startedAt {
+                    Text(started.formatted(date: .omitted, time: .standard))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                Text("\(session.events.count) events")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
         }
     }
 }

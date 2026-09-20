@@ -30,7 +30,7 @@ struct MockHarnessFlowView: View {
                         StepRow(
                             number: 2,
                             title: "Attest",
-                            subtitle: "Sends to Apple, then to the server",
+                            subtitle: "Attests with Apple, then registers with the Auth Server",
                             state: attestState,
                             action: { Task { await model.attest() } }
                         )
@@ -44,12 +44,13 @@ struct MockHarnessFlowView: View {
                         )
                     }
 
-                    NavigationLink(destination: HarnessHistoryListView(events: model.history)) {
+                    NavigationLink(destination: HarnessHistoryListView(sessions: model.sessions)) {
                         HStack {
                             Image(systemName: "clock")
                             Text("History")
                             Spacer()
-                            Text("\(model.history.count)").foregroundStyle(.secondary)
+                            Text("\(model.sessions.filter { !$0.events.isEmpty }.count) sessions")
+                                .foregroundStyle(.secondary)
                             Image(systemName: "chevron.right").foregroundStyle(.secondary)
                         }
                         .padding(12)

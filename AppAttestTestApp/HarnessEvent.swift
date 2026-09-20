@@ -16,14 +16,22 @@ struct DetailField: Identifiable, Hashable {
 
 struct HarnessEvent: Identifiable {
     enum Kind: String {
-        case identityKeyGenerated = "Identity Key Generated"
+        // Each label is tagged with WHERE it actually happens, since that's
+        // exactly what's easy to lose track of otherwise: generateKey() and
+        // generateAssertion() are both purely local (Secure Enclave only,
+        // no network at all — confirmed for generateAssertion via web search
+        // this session); attestKey() is the ONLY call that produces a real
+        // response from Apple's own servers (the CBOR attestation object);
+        // the challenge fetch and registration submission hit YOUR Auth
+        // Server (architecture-decisions.md §6), a third, separate party.
+        case identityKeyGenerated = "Identity Key Generated (local)"
         case attestationStarted = "Attestation Started"
-        case attestationStepChallenge = "Challenge Fetched"
-        case attestationStepKeyGenerated = "App Attest Key Generated"
-        case attestationStepAttested = "Attested with Apple"
-        case attestationStepSubmitted = "Submitted to Server"
+        case attestationStepChallenge = "Challenge Fetched (Auth Server)"
+        case attestationStepKeyGenerated = "App Attest Key Generated (local)"
+        case attestationStepAttested = "Attestation Received (Apple)"
+        case attestationStepSubmitted = "Submitted (Auth Server)"
         case attestationFailed = "Attestation Failed"
-        case assertionSigned = "Assertion Signed"
+        case assertionSigned = "Assertion Signed (local)"
         case moduleReset = "Module State Reset"
         case identityKeyDeleted = "Identity Key Deleted"
 

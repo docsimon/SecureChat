@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = CA70F2A42EA3BEAA0098F0F9 /* SQLite */; };
 		CABD5C8D30442E240041D0B0 /* AppAttestKit in Frameworks */ = {isa = PBXBuildFile; productRef = CABD5C8C30442E240041D0B0 /* AppAttestKit */; };
+		CABD5C8E30442E240041D0B1 /* AppAttestKit in Frameworks */ = {isa = PBXBuildFile; productRef = CABD5C8C30442E240041D0B0 /* AppAttestKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -117,6 +118,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CABD5C8E30442E240041D0B1 /* AppAttestKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -263,6 +265,7 @@
 			);
 			name = AppAttestTestApp;
 			packageProductDependencies = (
+				CABD5C8C30442E240041D0B0 /* AppAttestKit */,
 			);
 			productName = AppAttestTestApp;
 			productReference = CA3468FA3049D39300C50190 /* AppAttestTestApp.app */;
@@ -754,6 +757,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AppAttestTestApp/AppAttestTestApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = PZH5BJLYFE;
@@ -787,6 +791,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AppAttestTestApp/AppAttestTestApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = PZH5BJLYFE;

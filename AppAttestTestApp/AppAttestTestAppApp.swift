@@ -11,7 +11,7 @@ import SwiftUI
 struct AppAttestTestAppApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            HarnessView()
         }
     }
 }

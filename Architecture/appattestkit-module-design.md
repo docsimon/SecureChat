@@ -218,7 +218,7 @@ The mock tests verify **orchestration**, and nothing about whether Apple's API i
 - Real jailbroken-device behaviour
 - Actual attestation acceptance (needs entitlement + hardware + live server)
 
-**Structural constraint:** App Attest entitlements belong to the **app target, not a package.** The package's own test suite can never exercise the real `DCAppAttestService`. Requires a host-app test target for integration, plus a manual on-device smoke checklist.
+**Structural constraint:** App Attest entitlements belong to the **app target, not a package.** The package's own test suite can never exercise the real `DCAppAttestService`. Requires a host-app test target for integration (`AppAttestTestApp`), plus a manual on-device smoke checklist — see `appattest-smoke-checklist.md`.
 
 ---
 

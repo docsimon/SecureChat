@@ -65,7 +65,7 @@ struct HarnessFlowView: View {
                                 Task { await model.resetModuleState() }
                             }
                             Button("Delete identity key", role: .destructive) {
-                                model.deleteIdentityKey()
+                                Task { await model.deleteIdentityKey() }
                             }
                         }
                         .padding(.top, 8)

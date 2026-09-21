@@ -225,7 +225,8 @@ No server-side work follows from this path — the re-attestation concept is ret
 | Crash after `attestKey` | Resume from `.attestationPending`, upload only | Module |
 | Crash after upload, before response | Server idempotency returns existing UUID | Server |
 | Cached attestation stale (challenge expired) | Regenerate key — **capped at 2–3 ever, persisted** | Module |
-| `DCError.invalidKey` | Re-attestation flow — **blocked on server contract** | Both |
+| `DCError.invalidKey`, discovered mid-attestation | Regenerated inline by the retry loop, same flow, same cap (module doc §6/§7) | Module |
+| `DCError.invalidKey`, discovered later via `sign()` | App calls `acknowledgeKeyInvalidation()`, then re-attests fresh — always a **new account** (§8), never a special re-attestation endpoint | Both |
 | Keychain survives app deletion | `UserDefaults` flag absent → purge Keychain on first launch | App |
 
 **The cardinal rule:** never call `generateKey()` on failure except for `invalidKey` and the capped stale-challenge case. Everything else retries the existing `keyId`.

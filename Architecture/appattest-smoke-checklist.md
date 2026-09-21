@@ -7,7 +7,7 @@ correctly. That's only checkable on a real device, using the
 hand after any change to `AttestationCoordinator`, `LiveAttestService`, or
 `LiveKeyStore`.
 
-Last updated 2026-09-20.
+Last updated 2026-09-21.
 
 ---
 
@@ -26,11 +26,13 @@ Last updated 2026-09-20.
 
 ## Checklist
 
-1. **Support check.** Launch on device, tap Support. Confirm the app doesn't
-   crash and logs a sane message. (On Simulator: confirm Attest below
-   produces `.unsupported`, not a crash.)
+1. **Support check.** The guided-sequence UI has no standalone Support
+   button anymore — this check is folded into Attest's own outcome. On the
+   Simulator specifically, tap Attest and confirm it ends in `.unsupported`,
+   not a crash.
 
-2. **Fresh attestation.** Tap Restore first (should report `.none`), then
+2. **Fresh attestation.** On a clean install, restore runs automatically on
+   launch (`.task` on the root view) — confirm state shows `none`, then tap
    Attest. Confirm the log shows the full sequence — `.keyGenerated` →
    `.attestationPending` → `.attested` — and the final state is `.attested`.
    This is the only step that spends a real key generation.
@@ -40,10 +42,14 @@ Last updated 2026-09-20.
    succeed once attested.
 
 4. **Kill-and-relaunch resumption.** Force-quit the app (not the in-app
-   Reset), relaunch, tap Restore. Confirm it reports `.attested` with the
-   *same* state as before the kill — no new key generation, no re-attestation
-   attempt. This is module doc §5's core guarantee: state reconstructible
-   from persisted data alone.
+   Reset), relaunch. Restore runs automatically — confirm state shows
+   `attested`, the *same* state as before the kill, then tap Sign and confirm
+   it succeeds (contrast with step 6: a plain kill doesn't touch the Secure
+   Enclave credential, only an actual reinstall does). No new key generation,
+   no re-attestation attempt. This is module doc §5's core guarantee: state
+   reconstructible from persisted data alone. Note: session *history* is
+   in-memory only and does not survive the kill — the fresh session this
+   produces should show as "Attested (restored)," not "In progress."
 
 5. **Module-state reset.** Tap "Reset module state." Confirm state returns to
    `.none` and a subsequent Attest performs a full fresh flow again
@@ -51,29 +57,48 @@ Last updated 2026-09-20.
    in a loop).
 
 6. **The real end-to-end `.keyInvalid` test.** This is the one mocks can
-   never cover, and the one that validates the Option A decision
-   (`appattestkit-module-design.md` §8) against actual device behaviour, not
-   just reasoning about it:
-   - Complete step 2 successfully.
+   never cover, and the one that validates the current decision
+   (`appattestkit-module-design.md` §8: v1 always wipes the identity key
+   together with module state) against actual device behaviour, not just
+   reasoning about it. It also exercises `acknowledgeKeyInvalidation()`
+   (module doc §7) — a gap discovered *by running this exact test* before
+   that method existed, when Sign correctly failed but nothing could recover
+   from it short of a manual Reset:
+   - Complete steps 1–2 successfully, note the identity's public key prefix.
    - **Delete the app from the device via iOS itself** (not the in-app
      buttons) — this is what actually invalidates the App Attest key,
      confirmed against Apple's own documentation this session.
    - Reinstall from Xcode.
-   - Launch, tap Restore. Expected: reports `.attested` with the **old**
-     `keyId` — the identity key's Keychain item and `LiveKeyStore`'s state
-     both survive a plain app deletion.
-   - Tap Sign. Expected: fails with a real `AttestationError.keyInvalid`
-     (mapped from Apple's actual `DCError.invalidKey`), not a crash or a
-     silent success.
-   - Tap Attest. Expected: the coordinator regenerates a key and completes a
-     fresh registration — confirm `service` generateKey fires exactly once
-     more (check the "real attempts" counter incremented by exactly 1).
+   - Launch. Restore runs automatically. Expected: reports `attested` with
+     the **old** `keyId` and the **old** identity prefix — both the identity
+     key's Keychain item and `LiveKeyStore`'s state survive a plain app
+     deletion; nothing has actually been cleared yet at this point.
+   - Tap Sign. Expected: fails — confirmed on real hardware this reads as
+     `serverRejected` (Apple's actual `DCError.invalidInput`, not
+     `.invalidKey` as originally assumed — see the note on
+     `AttestationError.from`), not a crash or a silent success. The harness's
+     `sign()` handler treats `.keyInvalid` and `.serverRejected("invalidInput")`
+     as equivalent here, and — per the v1 policy — now deletes the identity
+     key **and** calls `acknowledgeKeyInvalidation()` together. Confirm the
+     log shows both, `identityGenerated`/`attested` both flip back to `false`,
+     and step 1 (Generate Identity Key) re-enables itself.
+   - Tap Generate Identity Key. Confirm the logged prefix differs from the
+     one noted at the start — a genuinely new identity, not the old one.
+   - Tap Attest. Expected: a full fresh registration completes, tied to the
+     new identity — confirm `generateKey` fires exactly once more (check the
+     "real attempts" counter incremented by exactly 1).
 
-7. **Identity-loss fallback.** Tap "Delete identity key," then Attest.
-   Confirm a fresh identity keypair is generated (different public key
-   prefix logged) alongside the fresh registration — this is the fallback
-   path module doc §8 describes for when the identity key is *also* lost,
-   distinct from step 6's "identity survives" path.
+7. **Manual reset paths, tested in isolation.** The harness's two Danger
+   Zone buttons no longer map onto two different *real* recovery paths (v1
+   only has one — step 6, above) — they're diagnostic tools for exercising
+   each underlying primitive on its own:
+   - **"Reset module state"** alone: confirm it clears App Attest state but
+     *keeps* the identity key (`identityGenerated` stays `true`) — this is
+     useful for testing `AttestationCoordinator`'s own retry-from-`.none`
+     behaviour in isolation, independent of the identity policy question.
+   - **"Delete identity key"** alone (i.e. without a prior Sign failure):
+     confirm it clears both identity and module state together, same as the
+     automatic path in step 6, just triggered manually.
 
 ## Budget discipline
 

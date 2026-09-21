@@ -2,7 +2,7 @@
 
 Context document for reuse across conversations. Captures decisions made, the reasoning behind them, and what is explicitly deferred or rejected.
 
-Status: pre-launch, no live users. Last updated 2026-09-18.
+Status: pre-launch, no live users. Last updated 2026-09-21.
 
 ---
 
@@ -366,6 +366,7 @@ A server compromise yields: future metadata, IP correlation, and the ability to 
 2. **Final message cap** — 2,000 graphemes proposed, not confirmed.
 3. **Recovery mechanism** — user-held recovery phrase vs. iCloud Keychain sync vs. none. Deferred, but affects the Keychain accessibility flag chosen at implementation time.
 4. **Push notifications** — needed at all, given the both-online constraint?
+5. **Manual contact merge (v2).** Since a reinstall now always produces a fresh identity key (§12's "Identity key on `.keyInvalid`" row), a contact who reinstalls looks like a stranger to everyone they'd already paired with — no automatic recognition is possible, the cryptographic link is gone by construction. A v2 feature could let a user manually declare "this new contact is actually person X I already know" and merge the two records (nickname, history, retiring the orphaned old entry). Necessarily a socially-verified claim, not a cryptographically-verified one — worth designing deliberately (see `pairing-workflow.md`'s note on it) rather than bolting on later.
 
 *Resolved: routing identifier (static UUID, see §10).*
 
@@ -388,5 +389,6 @@ A server compromise yields: future metadata, IP correlation, and the ability to 
 | Scaling | Single relay instance as long as possible |
 | Media | Out of scope for v1; version byte reserves the upgrade path |
 | Abuse handling | Client-side unpair/block is the primary remedy, not server bans |
-| Re-attestation on `.keyInvalid` | Rejected. A new App Attest key always mints a new account rather than rebinding the old one — the alternative would require the server to retain `identityPublicKey` indefinitely as a lookup key, reversing the "discard it after registration" decision above. The X25519 identity keypair is kept across the new registration for trust continuity (contacts see the same fingerprint on re-pair). See `appattestkit-module-design.md` §8, `account-keys-reference.md`. |
+| Re-attestation on `.keyInvalid` | Rejected. A new App Attest key always mints a new account rather than rebinding the old one — the alternative would require the server to retain `identityPublicKey` indefinitely as a lookup key, reversing the "discard it after registration" decision above. See `appattestkit-module-design.md` §8, `account-keys-reference.md`. |
+| Identity key on `.keyInvalid` (v1) | **Revised.** Originally kept across re-registration for trust continuity; reversed to always wipe it together with the module's own state, to ship v1 faster with a smaller invalidation state space (one path to test, not two). Clean to reverse later — no server or schema coupling. See `appattestkit-module-design.md` §8. |
 | Pairing transport | BLE/NFC only for v1; shared-link pairing considered and deferred (no rendezvous infrastructure needed). SAS confirmation is a hard gate, not a soft "unverified" warning. Default display name reuses the identicon word-triple. See `pairing-workflow.md`. |

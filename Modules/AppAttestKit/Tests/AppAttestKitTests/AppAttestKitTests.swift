@@ -322,3 +322,63 @@ struct SigningTests {
         #expect(await service.generateAssertionCallCount == 1)
     }
 }
+
+// MARK: - Key invalidation acknowledged after the fact
+//
+// sign() deliberately never self-heals (it's the thin hot path — no I/O, no
+// state machine). That means a `.keyInvalid` it surfaces is the ONE way the
+// app can discover invalidation outside an active ensureAttested() call, and
+// without a way to act on it, ensureAttested()'s own persisted-flag check
+// (which exists specifically to avoid re-attesting a key that's still fine)
+// would keep trusting the stale record forever. acknowledgeKeyInvalidation()
+// closes that gap — these tests are what justify it existing at all.
+
+@Suite("acknowledgeKeyInvalidation()")
+struct KeyInvalidationAcknowledgementTests {
+
+    @Test("Resets state so the next ensureAttested() call re-attests with a new key")
+    func resetsAndAllowsReattestation() async throws {
+        let (coordinator, service, store, _, _) = makeCoordinator(
+            generateKeyResults: [.success("key-1"), .success("key-2")]
+        )
+        _ = try await coordinator.ensureAttested(binding: identityBinding)
+        #expect(await coordinator.currentState == .attested(keyId: "key-1"))
+
+        // Simulates: the app called sign(), got .keyInvalid back, and is
+        // telling the coordinator about it.
+        let recovered = await coordinator.acknowledgeKeyInvalidation()
+
+        #expect(recovered)
+        #expect(await coordinator.currentState == .none)
+        #expect(try store.loadIsAttested() == false)
+        #expect(try store.loadKeyId() == nil)
+
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+        #expect(final == .attested(keyId: "key-2"))
+        #expect(await service.generateKeyCallCount == 2)
+    }
+
+    @Test("Shares the regeneration budget with the retry loop's own keyInvalid handling")
+    func sharesRegenerationBudgetWithRetryLoop() async throws {
+        let store = InMemoryKeyStore()
+        // The first attestKey() call fails mid-flow, spending 1 of 3 via the
+        // retry loop's own handling; the rest succeed.
+        let (coordinator, _, _, _, _) = makeCoordinator(
+            generateKeyResults: [.success("key-1"), .success("key-2")],
+            attestKeyResults: [.failure(AttestationError.keyInvalid), .success(testAttestation)],
+            keyStore: store
+        )
+        _ = try await coordinator.ensureAttested(binding: identityBinding)
+        #expect(try store.loadRegenerationCount() == 1)
+
+        // If these two paths tracked separate budgets, this would incorrectly
+        // allow 3 MORE regenerations on top of the 1 already spent, instead
+        // of sharing one capped pool of 3 total.
+        #expect(await coordinator.acknowledgeKeyInvalidation())
+        #expect(try store.loadRegenerationCount() == 2)
+        #expect(await coordinator.acknowledgeKeyInvalidation())
+        #expect(try store.loadRegenerationCount() == 3)
+        #expect(await coordinator.acknowledgeKeyInvalidation() == false)
+        #expect(try store.loadRegenerationCount() == 3)
+    }
+}

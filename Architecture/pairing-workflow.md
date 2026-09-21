@@ -156,3 +156,20 @@ the protocol.
   policy not yet specified.
 - Duplicate pairing attempt with an already-paired identity key — behaviour
   not yet specified (overwrite the existing contact record? reject? merge?).
+  Only reachable today by re-pairing the same still-valid identity twice by
+  mistake, since a reinstall now always produces a fresh identity
+  (`appattestkit-module-design.md` §8) — this can never fire automatically
+  from a contact's reinstall the way it originally could.
+- **Manual contact merge (v2, open question — architecture doc §11).** A
+  contact who reinstalls arrives with a genuinely different
+  `identityPublicKey` — nothing in this pairing flow can detect "this is the
+  same person as an existing contact," because the cryptographic link that
+  would let it do so no longer exists after step 2's handshake. Any merge
+  has to be a user-initiated, socially-verified action (e.g. "merge with
+  existing contact…" on the new contact's screen), not something this
+  protocol can offer automatically. Not designed yet: the UI entry point,
+  what gets preserved (nickname, history) versus what can't be (the old
+  session's Double Ratchet state, gone regardless), and whether SAS
+  verification should still be mandatory even when merging (yes, almost
+  certainly — a merge claim is exactly the kind of thing a MITM would want
+  you to accept uncritically).

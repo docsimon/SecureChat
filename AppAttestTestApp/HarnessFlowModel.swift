@@ -67,7 +67,12 @@ final class HarnessFlowModel {
         await coordinator.restore()
         let state = await coordinator.currentState
         attested = state.isAttested
-        log(.restored, summary: "found existing state on launch: \(state.label)")
+        // Structured, not just embedded in the summary text — HarnessSession
+        // needs to reliably tell "restored into an already-attested state"
+        // apart from "restored into something else," and matching against
+        // free text would be fragile.
+        log(.restored, summary: "found existing state on launch: \(state.label)",
+            detail: [DetailField(label: "Restored as attested", value: state.isAttested ? "yes" : "no")])
     }
 
     func generateIdentity() async {
@@ -139,6 +144,33 @@ final class HarnessFlowModel {
                 detail: [DetailField(label: "Signature size", value: "\(signature.count) bytes")])
         } catch let error as AttestationError {
             log(.signFailed, summary: error.diagnosticName, isError: true)
+            // Confirmed on real hardware (a delete+reinstall's orphaned keyId):
+            // Apple's generateAssertion() surfaces this as DCError.invalidInput
+            // → .serverRejected("invalidInput"), NOT .keyInvalid as originally
+            // assumed — see the warning in AttestationError.swift this proved
+            // right. Safe to treat as equivalent to .keyInvalid specifically
+            // HERE: this call's clientDataHash is always a freshly-computed
+            // SHA256 digest, never app-malformed, so an "invalidInput" rejection
+            // at THIS call site can only mean the keyId itself is dead.
+            if error == .keyInvalid || error == .serverRejected("invalidInput") {
+                // v1 policy (appattestkit-module-design.md §8, revised): wipe
+                // the identity key TOGETHER with module state, always — never
+                // one without the other. The earlier version of this handler
+                // only called acknowledgeKeyInvalidation(), which is exactly
+                // the gap that method closes, but preserving identity here
+                // would reintroduce the two-path complexity that decision
+                // deliberately traded away for a faster v1 ship.
+                IdentityKeyStore.delete()
+                identityPublicKeyPrefix = nil
+                let recovered = await coordinator.acknowledgeKeyInvalidation()
+                identityGenerated = false
+                attested = false
+                log(.identityKeyDeleted, summary: recovered
+                    ? "key invalidation acknowledged — identity and module state both cleared (v1 policy), next Generate/Attest starts fully fresh"
+                    : "key invalidation acknowledged, but regeneration budget exhausted",
+                    isError: !recovered)
+                startNewSession()
+            }
         } catch {
             log(.signFailed, summary: "\(error)", isError: true)
         }
@@ -159,12 +191,23 @@ final class HarnessFlowModel {
         #endif
     }
 
-    func deleteIdentityKey() {
+    func deleteIdentityKey() async {
         IdentityKeyStore.delete()
         identityGenerated = false
         attested = false
         identityPublicKeyPrefix = nil
-        log(.identityKeyDeleted, summary: "identity key deleted — next run starts fully fresh")
+        #if DEBUG
+        // Without this, the coordinator's in-memory state can still say
+        // .attested from before the delete — and AttestationCoordinator.run()
+        // returns immediately on `state.isAttested`, without ever contacting
+        // Apple again, for an identity that no longer matches it.
+        if let coordinator {
+            await coordinator.debugReset()
+        }
+        log(.identityKeyDeleted, summary: "identity key and module state cleared — next Attest starts fully fresh")
+        #else
+        log(.identityKeyDeleted, summary: "identity key deleted, but debugReset is DEBUG-only — module state may still read attested", isError: true)
+        #endif
         startNewSession()
     }
 
@@ -204,7 +247,15 @@ final class HarnessFlowModel {
                 detail: [
                     DetailField(label: "Format", value: "CBOR — {fmt, attStmt, authData}"),
                     DetailField(label: "Attestation object size", value: "\(attestationData.count) bytes"),
-                    DetailField(label: "Environment", value: AttestationEnvironmentHint.describe(attestationData))
+                    DetailField(label: "Environment", value: AttestationEnvironmentHint.describe(attestationData)),
+                    // Full raw bytes, unmodified from what attestKey() returned.
+                    // In-memory only (this history is never persisted), but this
+                    // is the same category of sensitive data as keyId — the
+                    // embedded cert contains the device's real App Attest
+                    // public key. Never wire this field into anything that
+                    // persists, syncs, or reaches a crash report.
+                    DetailField(label: "Raw CBOR (hex)",
+                                value: attestationData.map { String(format: "%02x", $0) }.joined())
                 ])
         case .attested:
             // No log here — handleTransportEvent's .submitted case already

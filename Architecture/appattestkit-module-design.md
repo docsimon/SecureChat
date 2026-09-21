@@ -2,7 +2,7 @@
 
 Companion to `architecture-decisions.md`. Covers the extraction of registration logic into a reusable, testable module.
 
-Status: design agreed. §8's blocker is resolved — no re-attestation. Last updated 2026-09-18.
+Status: design agreed. §8's blocker is resolved — no re-attestation, and identity survival is reversed for v1 (always wipe). Last updated 2026-09-21.
 
 ---
 
@@ -175,11 +175,12 @@ public enum AttestationError: Error {
 
 ## 7. Key invalidation
 
-Not covered in the first draft. Keys stop working: Keychain cleared, device restored from backup, `DCError.invalidKey`.
+Keys stop working: Keychain cleared, device restored from backup, `DCError.invalidKey`. Two distinct discovery paths, handled differently — this distinction was missed in the first draft and only surfaced during real-device testing (see `appattest-smoke-checklist.md`):
 
-Client behaviour: discard the `keyId`, generate a fresh one, re-attest.
+- **Discovered mid-attestation** — `attestKey` itself throws `.keyInvalid` during an active `ensureAttested()` call. Handled entirely inside the retry loop: discard the `keyId`, generate a fresh one, re-attest, bounded by the regeneration cap (§6).
+- **Discovered later, independently, via `sign()`** — the credential died after the app already believed it was attested (a reinstall is the common real-world cause). `sign()` deliberately never self-heals (§3: "keep this path thin — no state machine"), and `ensureAttested()`'s own persisted-flag check (it exists specifically so a healthy key isn't needlessly re-attested on every launch) would otherwise keep trusting the stale record forever. The app must explicitly call **`acknowledgeKeyInvalidation()`** on seeing `.keyInvalid` from `sign()` — this clears the persisted record and transitions to `.none`, drawing from the **same** regeneration cap as the mid-attestation path (one shared pool, not two, or the cap would be trivially bypassable).
 
-**This breaks the current server contract** — see §8.
+Per §8's resolution below: re-attesting here always means a fresh `/register` producing a **new account** — never a rebind of the old one via a special re-attestation endpoint.
 
 ---
 
@@ -191,14 +192,19 @@ Client behaviour: discard the `keyId`, generate a fresh one, re-attest.
 
 **Client behaviour on `.keyInvalid`:** the regenerate-and-reattest path already implemented in `AttestationCoordinator` (§6/§7) needs no code change — discard `keyId`, generate a new one, reattest. What it produces is a **new account**, not a recovered one. The app layer must:
 - run a completely fresh `/register`, minting a new `account_uuid`
-- **keep the existing X25519 identity keypair** rather than generating a new one alongside it (see below)
+- **also discard and regenerate the X25519 identity keypair** (revised — see below; an earlier version of this section kept it)
 - surface to the user that every contact needs to be re-paired — there is no server-mediated way for a contact to learn the new `account_uuid`, since the product has no discovery/directory (architecture doc §1)
 
-**Why the identity key is kept, not regenerated:** architecture doc §10 already establishes "pairings are the durable identifier, not the UUID" — the identity key, not the account UUID, is what a contact actually trusts (it's what the SAS/fingerprint is derived from). Keeping it means a contact re-pairing after this event sees the *same* fingerprint they already recognise — reconnecting with someone they know, not re-verifying a stranger. The account UUID was always disposable routing plumbing; nothing is lost by discarding it on its own.
+**Revised decision (v1 ships this way): wipe the identity key too, always, together with the module's own state.** The original reasoning for keeping it stands on its own merits — architecture doc §10's "pairings are the durable identifier, not the UUID" is still true, and a contact re-pairing with the same fingerprint really is a nicer experience than being treated as a stranger. But realizing that benefit requires app-layer work that doesn't exist yet (matching an incoming pairing's `identityPublicKey` against existing contacts and merging rather than duplicating — nothing in the current pairing spec does this), and shipping it doubles the invalidation state space into two paths to build, test, and keep correct (this is exactly where this session's real bugs lived — see the change log below). Given the goal of shipping v1 quickly, the cost wasn't worth the benefit yet. Concretely, the app now always pairs identity deletion with `acknowledgeKeyInvalidation()`/`debugReset()` — never one without the other.
 
-Cost of this choice, recorded so it isn't rediscovered later: the same `identityPublicKey` appears in two separate `/register` request bodies over time (once per account). Since the server never persists it, this isn't a stored correlation — but it is a narrow one at the infrastructure-logging layer (load balancer / reverse proxy / WAF logs, already flagged as out of app control in architecture doc §10) if a live adversary correlates both requests. Judged acceptable, and smaller in blast radius than the rejected re-attestation alternative.
+This is a clean decision to reverse later — nothing here creates migration debt:
+- The server is unaffected either way; it never persists `identityPublicKey` regardless of which policy the client runs.
+- No contact-record schema changes; "match by `identityPublicKey`, update instead of insert" is a pure addition to the pairing-completion path whenever it's built.
+- Existing users aren't harmed by a future switch — it only changes behavior for reinstalls that happen *after* the app updates to the new policy.
 
-**No longer open:** the two sub-questions this section used to list (does the identity key survive the same event that kills the App Attest key; what happens if it's also lost) are moot under this decision — the identity key's survival is now a *goal* the app enforces directly (never deleted except on deliberate factory-reset/logout), not a fact to verify about Apple's behaviour. If the identity key is lost for some unrelated reason, the fallback is identical: new account, new identity, full re-pair.
+**Also newly true under this decision:** the "same identity key correlatable across two `/register` calls" privacy cost noted in the previous version of this section no longer applies at all — wiping the identity key removes that correlation surface entirely, for free.
+
+**Open for v2 — manual contact merge, not automatic recognition.** Since the identity key changes on every reinstall now, there is no way for a contact's app to *automatically* recognize a returning identity — the cryptographic thread is gone by construction, not just unbuilt. A v2 feature could let the *user* manually declare "this new contact is the same person as this existing one" and merge the records (preserving nickname/history, retiring the orphaned old entry). This is fundamentally a socially-verified action, not a cryptographically-verified one — the app can never prove the claim, only let the user assert it. Tracked as an open question in `architecture-decisions.md` §11.
 
 ---
 

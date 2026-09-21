@@ -83,6 +83,18 @@ extension AttestationError {
     /// The `DCError` code list this was written against is from mid-2025 and may
     /// be incomplete or renamed. This is the one place where being wrong strands
     /// users permanently. See module doc §6.
+    ///
+    /// One confirmed real-device finding worth recording so it isn't
+    /// rediscovered the hard way: `generateAssertion()` called with a keyId
+    /// orphaned by an app reinstall does NOT throw `.invalidKey` — it throws
+    /// `DCError.invalidInput`, landing here as `.serverRejected("invalidInput")`.
+    /// The `.invalidKey` case below is real (confirmed for other invalidation
+    /// paths), just not this one. Callers of `sign()` should treat
+    /// `.serverRejected("invalidInput")` as equivalent to `.keyInvalid` IF they
+    /// can guarantee their own `clientDataHash` is always well-formed (see
+    /// `AttestationCoordinator.acknowledgeKeyInvalidation()`'s doc comment) —
+    /// this module can't assume that for every caller, so it deliberately does
+    /// not fold the two together here.
     static func from(_ error: Error) -> AttestationError {
         if let already = error as? AttestationError { return already }
 

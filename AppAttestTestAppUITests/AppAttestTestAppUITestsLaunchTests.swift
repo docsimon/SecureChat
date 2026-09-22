@@ -9,8 +9,13 @@ import XCTest
 
 final class AppAttestTestAppUITestsLaunchTests: XCTestCase {
 
+    // Was `true` (default Xcode boilerplate) — ran this same test 4x per
+    // invocation for a project with only one configuration, no real signal
+    // gained. Simulator/runner cold-start overhead (~150s the first time)
+    // pushed the combined cost of running the full AppAttestTestApp test
+    // plan over its timeout; 1 run instead of 4 directly cuts that risk.
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
+        false
     }
 
     override func setUpWithError() throws {

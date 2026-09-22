@@ -56,55 +56,81 @@ Last updated 2026-09-21.
    (deliberately, since this spends another key generation — don't do this
    in a loop).
 
-6. **The real end-to-end `.keyInvalid` test.** This is the one mocks can
-   never cover, and the one that validates the current decision
-   (`appattestkit-module-design.md` §8: v1 always wipes the identity key
-   together with module state) against actual device behaviour, not just
-   reasoning about it. It also exercises `acknowledgeKeyInvalidation()`
-   (module doc §7) — a gap discovered *by running this exact test* before
-   that method existed, when Sign correctly failed but nothing could recover
-   from it short of a manual Reset:
+6. **The real end-to-end `.keyInvalid` test — proactive launch-time purge.**
+   This is the one mocks can never cover, and the one that validates the
+   current decision (`appattestkit-module-design.md` §8: v1 wipes the
+   identity key together with module state, detected **proactively at
+   launch**, not just reactively on a failed `sign()`) against actual device
+   behaviour:
    - Complete steps 1–2 successfully, note the identity's public key prefix.
    - **Delete the app from the device via iOS itself** (not the in-app
      buttons) — this is what actually invalidates the App Attest key,
      confirmed against Apple's own documentation this session.
    - Reinstall from Xcode.
-   - Launch. Restore runs automatically. Expected: reports `attested` with
-     the **old** `keyId` and the **old** identity prefix — both the identity
-     key's Keychain item and `LiveKeyStore`'s state survive a plain app
-     deletion; nothing has actually been cleared yet at this point.
-   - Tap Sign. Expected: fails — confirmed on real hardware this reads as
-     `serverRejected` (Apple's actual `DCError.invalidInput`, not
-     `.invalidKey` as originally assumed — see the note on
-     `AttestationError.from`), not a crash or a silent success. The harness's
-     `sign()` handler treats `.keyInvalid` and `.serverRejected("invalidInput")`
-     as equivalent here, and — per the v1 policy — now deletes the identity
-     key **and** calls `acknowledgeKeyInvalidation()` together. Confirm the
-     log shows both, `identityGenerated`/`attested` both flip back to `false`,
-     and step 1 (Generate Identity Key) re-enables itself.
+   - Launch. Expected (this changed from earlier in the session): the
+     `FirstLaunchPurgeGate` fires **before any state is shown** — the log's
+     first entry should read "first launch after install/reinstall — purged
+     stale Keychain state," **not** "found existing state on launch:
+     attested." The UI should show a genuinely clean slate immediately:
+     Generate Identity Key enabled, everything else reset. You should
+     *not* need to tap Sign to see anything clear itself this time — that
+     reactive path (`acknowledgeKeyInvalidation()` from `sign()`'s failure
+     handler) is now a secondary safety net for invalidation that happens
+     *without* a reinstall, not the primary way this gets discovered.
    - Tap Generate Identity Key. Confirm the logged prefix differs from the
-     one noted at the start — a genuinely new identity, not the old one.
-   - Tap Attest. Expected: a full fresh registration completes, tied to the
-     new identity — confirm `generateKey` fires exactly once more (check the
-     "real attempts" counter incremented by exactly 1).
+     one noted at the start.
+   - Tap Attest. Confirm a full fresh registration completes — "real
+     attempts" counter incremented by exactly 1.
 
-7. **Manual reset paths, tested in isolation.** The harness's two Danger
-   Zone buttons no longer map onto two different *real* recovery paths (v1
-   only has one — step 6, above) — they're diagnostic tools for exercising
-   each underlying primitive on its own:
+7. **CRITICAL — repeated normal launches must never re-purge.** This is the
+   single most important check in this document. If the first-launch gate
+   is ever wrong in this direction — firing on an *ordinary* launch instead
+   of only the first one after install — it repeatedly spends the device's
+   real, finite key-generation budget until exhausted, in days, silently.
+   Immediately after step 6 (so the flag is now set and the state is
+   genuinely `attested`):
+   - Force-quit and relaunch **3 or more times in a row**, without
+     reinstalling in between.
+   - After **every** relaunch, confirm: the log shows the ordinary "found
+     existing state on launch: attested" restore path, **never** another
+     "first launch... purged" entry; `identityGenerated`/`attested` both
+     correctly read `true`; and — the actual bottom line — the **"real
+     attempts" counter does not move**, on any of these relaunches.
+   - This has automated coverage too, not just this manual check:
+     `FirstLaunchPurgeGateTests` (`AppAttestTestAppTests.swift`) simulates
+     10 consecutive launches in isolation and asserts the purge fires
+     exactly once. Run it with
+     `xcodebuild test -scheme AppAttestTestApp -only-testing:AppAttestTestAppTests`
+     as a fast, repeatable check of the gating logic alongside this
+     real-device one — the unit test proves the gate's own logic is sound;
+     this manual step proves the real Keychain/`UserDefaults` integration
+     actually behaves that way on a device. Use `-only-testing:` here
+     deliberately: running the full scheme's test plan also pulls in the
+     (unrelated, un-asserted) default UI test target, whose simulator/runner
+     cold start can add well over a minute the first time.
+   - Also confirm the "real attempts" counter itself survives the reinstall
+     in step 6 — it's Keychain-backed specifically so it doesn't silently
+     reset to near-zero every time this checklist's own reinstall steps run.
+
+8. **Manual reset paths, tested in isolation.** The harness's two Danger
+   Zone buttons don't correspond to distinct *real* recovery paths (v1 only
+   has one — steps 6/7, above, triggered automatically) — they're
+   diagnostic tools for exercising each underlying primitive on its own:
    - **"Reset module state"** alone: confirm it clears App Attest state but
-     *keeps* the identity key (`identityGenerated` stays `true`) — this is
-     useful for testing `AttestationCoordinator`'s own retry-from-`.none`
-     behaviour in isolation, independent of the identity policy question.
-   - **"Delete identity key"** alone (i.e. without a prior Sign failure):
-     confirm it clears both identity and module state together, same as the
-     automatic path in step 6, just triggered manually.
+     *keeps* the identity key (`identityGenerated` stays `true`) — useful
+     for testing `AttestationCoordinator`'s own retry-from-`.none` behaviour
+     in isolation, independent of the identity policy question.
+   - **"Delete identity key"** alone (i.e. without a prior reinstall or Sign
+     failure): confirm it clears both identity and module state together,
+     same outcome as the automatic path, just triggered manually.
 
 ## Budget discipline
 
 Steps 2 and 6 are the only ones that spend real `generateKey()` calls, and
 only step 6 forces more than one (the reinstall plus the subsequent
 re-attestation). Running the full checklist end to end costs roughly 2–3 real
-key generations per pass. The harness's "real attempts" counter is a local
-heuristic — Apple exposes no remaining-budget API — so treat it as a running
-total to sanity-check against, not an authoritative limit.
+key generations per pass. Step 7 is deliberately designed to cost **zero** —
+that's the entire point of it, and if it ever doesn't, that's the bug. The
+harness's "real attempts" counter is a local heuristic — Apple exposes no
+remaining-budget API — so treat it as a running total to sanity-check
+against, not an authoritative limit.

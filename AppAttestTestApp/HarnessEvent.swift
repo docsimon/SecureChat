@@ -37,6 +37,7 @@ struct HarnessEvent: Identifiable {
         case assertionSigned = "Assertion Signed (local)"
         case moduleReset = "Module State Reset"
         case identityKeyDeleted = "Identity Key Deleted"
+        case backendSwitched = "Backend Switched"
 
         var systemImage: String {
             switch self {
@@ -53,6 +54,7 @@ struct HarnessEvent: Identifiable {
             case .assertionSigned: return "signature"
             case .moduleReset: return "arrow.counterclockwise"
             case .identityKeyDeleted: return "trash"
+            case .backendSwitched: return "server.rack"
             }
         }
     }

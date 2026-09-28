@@ -6,13 +6,30 @@
 //  MockHarnessFlowView's fake-data preview. Wired to HarnessFlowModel —
 //  real AttestationCoordinator, real DCAppAttestService calls, under the
 //  development App Attest environment (safe for repeated real-device
-//  testing). LocalFakeTransport still stands in for the Auth Server.
+//  testing). Which server it talks to (mock / local Docker / a custom URL)
+//  is the "Backend" picker below — see TransportBackend.swift.
 //
 
 import SwiftUI
 
+private enum BackendKind: String, CaseIterable, Identifiable, Hashable {
+    case mock = "Mock"
+    case localDocker = "Local Docker"
+    case custom = "Custom"
+    var id: String { rawValue }
+
+    init(_ backend: TransportBackend) {
+        switch backend {
+        case .mock: self = .mock
+        case .localDocker: self = .localDocker
+        case .custom: self = .custom
+        }
+    }
+}
+
 struct HarnessFlowView: View {
     @State private var model = HarnessFlowModel()
+    @State private var customURLText = ""
 
     var body: some View {
         NavigationStack {
@@ -59,6 +76,33 @@ struct HarnessFlowView: View {
                     }
                     .buttonStyle(.plain)
 
+                    DisclosureGroup("Backend") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Picker("Backend", selection: backendKindBinding) {
+                                ForEach(BackendKind.allCases) { kind in
+                                    Text(kind.rawValue).tag(kind)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+
+                            if BackendKind(model.transportBackend) == .custom {
+                                TextField("https://host:port", text: $customURLText)
+                                    .textFieldStyle(.roundedBorder)
+                                    .keyboardType(.URL)
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                                    .onSubmit(applyCustomURL)
+                            }
+
+                            Text(model.transportBackend.displayName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 8)
+                    }
+                    .padding(12)
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+
                     DisclosureGroup("Danger zone") {
                         VStack(alignment: .leading, spacing: 8) {
                             Button("Reset module state", role: .destructive) {
@@ -77,7 +121,36 @@ struct HarnessFlowView: View {
             }
             .navigationTitle("Attest Harness")
         }
-        .task { await model.restoreOnAppear() }
+        .task {
+            await model.restoreOnAppear()
+            if case .custom(let url) = model.transportBackend {
+                customURLText = url.absoluteString
+            }
+        }
+    }
+
+    private var backendKindBinding: Binding<BackendKind> {
+        Binding(
+            get: { BackendKind(model.transportBackend) },
+            set: { newKind in
+                switch newKind {
+                case .mock:
+                    model.transportBackend = .mock
+                case .localDocker:
+                    model.transportBackend = .localDocker
+                case .custom:
+                    applyCustomURL()
+                }
+            })
+    }
+
+    /// Only actually switches the backend if `customURLText` is a valid URL
+    /// — an empty or malformed field just leaves the picker on "Custom"
+    /// without a live backend behind it yet, rather than crashing or
+    /// silently falling back to a different one.
+    private func applyCustomURL() {
+        guard let url = URL(string: customURLText), !customURLText.isEmpty else { return }
+        model.transportBackend = .custom(url)
     }
 
     private var banner: some View {

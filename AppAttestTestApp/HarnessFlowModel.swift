@@ -9,10 +9,10 @@
 //  since it doesn't count against the production per-device key budget
 //  (confirmed this session — see account-keys-reference.md).
 //
-//  Drives RealAttestationTransport against the real Auth Server (AuthServer/,
-//  `docker compose up` on your Mac) — both the Apple-side and server-side
-//  calls are real now. LocalFakeTransport.swift is kept for UI iteration
-//  without the server running, but isn't wired in here anymore.
+//  Which server (if any) it talks to is a debug setting (TransportBackend),
+//  not hardcoded here — see the "Backend" section in HarnessFlowView. Both
+//  LocalFakeTransport (Apple-side only, no server) and RealAttestationTransport
+//  (Apple-side AND server-side both real) are selected at runtime.
 //
 //  Deliberately reads NOTHING from AppAttestKit except its public surface —
 //  AttestationCoordinator.currentState — never LiveKeyStore/
@@ -53,6 +53,23 @@ final class HarnessFlowModel {
         if attested { return "attested" }
         if identityGenerated { return "identity ready (App Attest not yet requested)" }
         return "none"
+    }
+
+    /// Changing this doesn't touch identity/attestation state — those
+    /// reflect the DEVICE's own Keychain-persisted state, independent of
+    /// which server it's pointed at. Switching backends mid-session and then
+    /// tapping Sign against a server that's never seen this device's keyId
+    /// is expected to fail server-side — that's correct, not a harness bug.
+    var transportBackend: TransportBackend {
+        get { TransportBackend.current }
+        set {
+            guard newValue != TransportBackend.current else { return }
+            TransportBackend.current = newValue
+            // Cached coordinator holds the OLD transport — drop it so the
+            // next resolveCoordinator() rebuilds against the new backend.
+            coordinator = nil
+            log(.backendSwitched, summary: "switched to \(newValue.displayName)")
+        }
     }
 
     private var coordinator: AttestationCoordinator?
@@ -297,18 +314,7 @@ final class HarnessFlowModel {
 
     private func resolveCoordinator() -> AttestationCoordinator {
         if let coordinator { return coordinator }
-        // Real Auth Server now that one exists (AuthServer/) — LocalFakeTransport
-        // is kept around for UI iteration without the server running, but the
-        // harness itself now drives against the real thing.
-        let transport = RealAttestationTransport(
-            baseURL: AuthServerConfig.baseURL,
-            identityPublicKeyBase64: {
-                guard let key = try? IdentityKeyStore.loadOrCreate() else { return "" }
-                return key.publicKey.rawRepresentation.base64EncodedString()
-            },
-            onEvent: { [weak self] event in
-                Task { @MainActor in self?.handleTransportEvent(event) }
-            })
+        let transport = makeTransport()
         let observer = HarnessObserver(
             onTransition: { [weak self] state in
                 Task { @MainActor in self?.recordTransition(state) }
@@ -321,6 +327,30 @@ final class HarnessFlowModel {
         let coordinator = AttestationCoordinator(transport: transport, observer: observer)
         self.coordinator = coordinator
         return coordinator
+    }
+
+    private func makeTransport() -> AttestationTransport {
+        let identityPublicKeyBase64: () -> String = {
+            guard let key = try? IdentityKeyStore.loadOrCreate() else { return "" }
+            return key.publicKey.rawRepresentation.base64EncodedString()
+        }
+        let onEvent: @Sendable (TransportEvent) -> Void = { [weak self] event in
+            Task { @MainActor in self?.handleTransportEvent(event) }
+        }
+        switch transportBackend {
+        case .mock:
+            return LocalFakeTransport(onEvent: onEvent)
+        case .localDocker:
+            return RealAttestationTransport(
+                baseURL: AuthServerConfig.baseURL,
+                identityPublicKeyBase64: identityPublicKeyBase64,
+                onEvent: onEvent)
+        case .custom(let url):
+            return RealAttestationTransport(
+                baseURL: url,
+                identityPublicKeyBase64: identityPublicKeyBase64,
+                onEvent: onEvent)
+        }
     }
 
     /// NEVER interpolate a state's associated keyId directly — `.label` is

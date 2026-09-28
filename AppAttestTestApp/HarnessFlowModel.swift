@@ -9,8 +9,10 @@
 //  since it doesn't count against the production per-device key budget
 //  (confirmed this session — see account-keys-reference.md).
 //
-//  LocalFakeTransport still stands in for the not-yet-built Auth Server:
-//  everything Apple-side here is real, everything server-side is fake.
+//  Drives RealAttestationTransport against the real Auth Server (AuthServer/,
+//  `docker compose up` on your Mac) — both the Apple-side and server-side
+//  calls are real now. LocalFakeTransport.swift is kept for UI iteration
+//  without the server running, but isn't wired in here anymore.
 //
 //  Deliberately reads NOTHING from AppAttestKit except its public surface —
 //  AttestationCoordinator.currentState — never LiveKeyStore/
@@ -169,21 +171,31 @@ final class HarnessFlowModel {
         activeStep = .attest
         defer { activeStep = .none }
 
-        guard identityGenerated, let identityKey = try? IdentityKeyStore.loadOrCreate() else {
+        // Existence check only — RealAttestationTransport reads the identity
+        // public key itself (independently, per /challenge and /register
+        // call) now that clientDataHash no longer embeds it here.
+        guard identityGenerated, (try? IdentityKeyStore.loadOrCreate()) != nil else {
             let summary = identityGenerated
                 ? "identity key unavailable despite being marked generated — try Delete Identity Key and Generate again"
                 : "no identity key — generate one first"
             log(.attestationFailed, summary: summary, isError: true)
             return
         }
-        let publicKey = identityKey.publicKey.rawRepresentation
 
         log(.attestationStarted, summary: "attestation flow started")
 
         let coordinator = resolveCoordinator()
         do {
+            // clientDataHash = SHA256(challenge) alone, NOT SHA256(challenge +
+            // identityPublicKey) — this used to concatenate the identity key
+            // in, matching an earlier design. Revised when the real Auth
+            // Server was built: the verification library it uses fixes this
+            // hash formula with no override seam, so the identity binding
+            // moved server-side instead (the challenge is issued bound to an
+            // identityPublicKey and checked back at /register — see
+            // RealAttestationTransport.swift and account-keys-reference.md).
             let result = try await coordinator.ensureAttested { challenge in
-                Data(SHA256.hash(data: challenge + publicKey))
+                Data(SHA256.hash(data: challenge))
             }
             if result.isAttested {
                 attested = true
@@ -285,9 +297,18 @@ final class HarnessFlowModel {
 
     private func resolveCoordinator() -> AttestationCoordinator {
         if let coordinator { return coordinator }
-        let transport = LocalFakeTransport { [weak self] event in
-            Task { @MainActor in self?.handleTransportEvent(event) }
-        }
+        // Real Auth Server now that one exists (AuthServer/) — LocalFakeTransport
+        // is kept around for UI iteration without the server running, but the
+        // harness itself now drives against the real thing.
+        let transport = RealAttestationTransport(
+            baseURL: AuthServerConfig.baseURL,
+            identityPublicKeyBase64: {
+                guard let key = try? IdentityKeyStore.loadOrCreate() else { return "" }
+                return key.publicKey.rawRepresentation.base64EncodedString()
+            },
+            onEvent: { [weak self] event in
+                Task { @MainActor in self?.handleTransportEvent(event) }
+            })
         let observer = HarnessObserver(
             onTransition: { [weak self] state in
                 Task { @MainActor in self?.recordTransition(state) }
@@ -338,7 +359,7 @@ final class HarnessFlowModel {
         case .attested:
             // No log here — handleTransportEvent's .submitted case already
             // logs this same moment (with the actually useful detail, the
-            // fake account UUID). This transition is just its downstream
+            // real account UUID). This transition is just its downstream
             // result; logging both would duplicate one real event.
             break
         case .unsupported:
@@ -352,7 +373,7 @@ final class HarnessFlowModel {
             log(.attestationStepChallenge, summary: "GET /challenge → \(byteCount) random bytes")
         case .submitted(let accountUUID):
             log(.attestationStepSubmitted, summary: "POST /register → Auth Server",
-                detail: [DetailField(label: "Account UUID (fake)", value: accountUUID)])
+                detail: [DetailField(label: "Account UUID", value: accountUUID)])
         }
     }
 

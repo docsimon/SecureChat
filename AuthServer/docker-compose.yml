@@ -1,0 +1,52 @@
+services:
+  auth-server:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      APPATTEST_TEAM_ID: ${APPATTEST_TEAM_ID}
+      APPATTEST_BUNDLE_ID: ${APPATTEST_BUNDLE_ID}
+      APPATTEST_ENVIRONMENT: ${APPATTEST_ENVIRONMENT:-development}
+      DATABASE_URL: jdbc:postgresql://postgres:5432/authserver
+      DATABASE_USER: authserver
+      DATABASE_PASSWORD: authserver
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: authserver
+      POSTGRES_USER: authserver
+      POSTGRES_PASSWORD: authserver
+    # Loopback only — Postgres has no reason to be reachable from the LAN,
+    # and it's using the default dev credentials from .env. docker compose
+    # exec (see AuthServer/README.md) doesn't need this published at all;
+    # this only exists for `psql`/a GUI client run directly on the Mac.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authserver"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # Loopback only — Redis has NO authentication configured at all, so
+    # publishing this to the LAN would let anyone on the same network forge
+    # a session token directly (SET session:token:<anything> <victim-uuid>),
+    # bypassing App Attest verification entirely. Same reasoning as postgres
+    # above: docker compose exec doesn't need this published either.
+    ports:
+      - "127.0.0.1:6379:6379"
+
+volumes:
+  postgres-data:

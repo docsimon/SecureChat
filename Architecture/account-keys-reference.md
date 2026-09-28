@@ -93,12 +93,26 @@ later concern, not covered here.
 
 Two keypairs the app is actually responsible for (#1, #2), on deliberately
 different curves, plus one trust anchor (#3) only ever verified against. #1
-and #2 are never merged into a single key — the only place the two systems
-touch is `clientDataHash = SHA256(challenge ‖ identityPublicKey)`, which the
-App Attest key signs over. That hash is the sole binding between "this is a
-genuine, unmodified app on real hardware" (App Attest) and "this is the
-identity the user is registering" (the X25519 key) — deliberately a one-way
-hash, not a shared key, so the two systems stay independent.
+and #2 are never merged into a single key.
+
+**Revised (was: baked into the hash).** `clientDataHash = SHA256(challenge)`
+— plain, no identity binding inside the hash. The chosen server-side
+verification library (`devicecheck-appattest`, Kotlin) computes this
+internally and offers no seam to hash anything else, and forking its
+internals to change one hash formula was judged worse than the alternative
+below (see `AuthServer/README.md`). The App Attest key still signs over the
+challenge, proving "genuine, unmodified app on real hardware" for *that*
+challenge — but the link to "this is the identity the user is registering"
+now lives in server state instead of the hash: `GET /challenge` takes
+`identityPublicKey` as an input and stores the pairing
+(`challenge → identityPublicKey`, single-use, same TTL as the challenge
+itself); `POST /register` rejects if the submitted `identityPublicKey`
+doesn't match what was stored at issuance. This is a real, if modest, trade:
+the binding now depends on TLS integrity for `/challenge` and `/register`
+(both required anyway for every other field in this flow) rather than being
+provable independent of transport trust the way a device-side hash
+composition is. Judged worth it to keep 100% of the ASN.1/CBOR/chain
+verification logic inside a maintained library, untouched.
 
 ## 5. The assertion flow — how the server authorizes each session
 

@@ -87,10 +87,14 @@ public actor AttestationCoordinator: AssertionSigning {
     /// connectivity change — concurrent calls collapse into one.
     ///
     /// - Parameter binding: the APP builds the clientDataHash from the challenge.
-    ///   The module does NOT construct this — the composition
-    ///   `SHA256(challenge ‖ identityPublicKey)` is an app-specific protocol
-    ///   decision, and the module must not know identity keys exist.
-    ///   A closure rather than a 6th protocol: no test needs a seam here (§11).
+    ///   The module does NOT construct this — the composition is an
+    ///   app-specific protocol decision, and the module must not know
+    ///   identity keys exist. Currently `SHA256(challenge)` alone (revised
+    ///   from `SHA256(challenge ‖ identityPublicKey)` — the server-side
+    ///   verification library fixes this formula with no override seam; the
+    ///   identity binding now lives server-side instead, see
+    ///   `account-keys-reference.md`). A closure rather than a 6th protocol:
+    ///   no test needs a seam here (§11).
     @discardableResult
     public func ensureAttested(
         binding: @Sendable @escaping (Data) throws -> Data

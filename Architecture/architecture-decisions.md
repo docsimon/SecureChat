@@ -55,8 +55,8 @@ Silent, on first launch. No user input at any point.
 
 1. Generate identity keypair → Keychain, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`
 2. `DCAppAttestService.shared.generateKey()` → persist `keyId` to Keychain **immediately**, before attesting
-3. `GET /challenge` → server returns 32 random bytes, stored with a short TTL
-4. `attestKey(keyId, clientDataHash: SHA256(challenge ‖ identityPublicKey))`
+3. `GET /challenge?identityPublicKey=...` → server stores `challenge → identityPublicKey` (single-use) and returns 32 random bytes, short TTL
+4. `attestKey(keyId, clientDataHash: SHA256(challenge))`
 5. `POST /register` with attestation object, challenge, identity public key
 6. Server verifies; mints account UUID bound to `keyId` + identity public key
 7. Client stores the UUID
@@ -68,12 +68,13 @@ Runs in roughly 300ms.
 All of these are mandatory — skipping any one degrades the scheme to replayable garbage:
 
 - Validate the X.509 chain in `attStmt.x5c` up to the Apple App Attest root CA
-- Extract the nonce from the leaf certificate's custom Apple extension at OID `1.2.840.113635.100.8.2` and confirm it equals `SHA256(authData ‖ clientDataHash)`
+- Extract the nonce from the leaf certificate's custom Apple extension at OID `1.2.840.113635.100.8.2` and confirm it equals `SHA256(authData ‖ SHA256(challenge))`
+- Confirm the submitted `identityPublicKey` matches the one stored against this challenge at issuance (step 3) — the identity-binding check; see `account-keys-reference.md` for why this moved out of the hash
 - Confirm the `rpId` hash in `authData` equals `SHA256(teamId + "." + bundleId)`
 - Confirm the counter is 0
 - Confirm `keyId` equals `SHA256(publicKey)`
 
-Use a maintained App Attest verification library. Do not hand-roll ASN.1 parsing — it is a well-known CVE farm (unbounded length fields, integer overflow in length arithmetic, non-canonical encodings).
+Use a maintained App Attest verification library. Do not hand-roll ASN.1 parsing — it is a well-known CVE farm (unbounded length fields, integer overflow in length arithmetic, non-canonical encodings). Chosen: `devicecheck-appattest` (Kotlin/JVM) — see `AuthServer/README.md`.
 
 Note the two binary formats involved: the attestation object wrapper is **CBOR** (RFC 8949); the certificates inside are **DER-encoded ASN.1** (X.690). Different formats, easy to confuse.
 
@@ -206,9 +207,9 @@ Use a `sync.Pool` of preallocated frame buffers server-side — only in-flight m
 
 Nearly free. Stateless, horizontally trivial, smallest available instance.
 
-- `GET /challenge` — 32 random bytes into Redis, 60s TTL
+- `GET /challenge` — 32 random bytes into Redis, **15 min TTL** (registration challenge; longer than the session nonce below because a cached attestation is bound to this challenge and the key can only be attested once — see `attestation-assertion-workflow.md` and module doc §7a)
 - `POST /register` — full attestation verification, 1–5ms CPU, runs **once per install ever**
-- `POST /session` — one ECDSA verify (~50–100µs) + counter check → short-lived session token
+- `POST /session` — one ECDSA verify (~50–100µs) + counter check against a separate 60s-TTL session nonce → short-lived session token
 
 `POST /register` **must be idempotent**, keyed on `keyId`. If attestation succeeds but the response is lost, the client retries; return the existing account UUID rather than erroring.
 
@@ -392,3 +393,5 @@ A server compromise yields: future metadata, IP correlation, and the ability to 
 | Re-attestation on `.keyInvalid` | Rejected. A new App Attest key always mints a new account rather than rebinding the old one — the alternative would require the server to retain `identityPublicKey` indefinitely as a lookup key, reversing the "discard it after registration" decision above. See `appattestkit-module-design.md` §8, `account-keys-reference.md`. |
 | Identity key on `.keyInvalid` (v1) | **Revised.** Originally kept across re-registration for trust continuity; reversed to always wipe it together with the module's own state, to ship v1 faster with a smaller invalidation state space (one path to test, not two). Clean to reverse later — no server or schema coupling. Triggered proactively at launch via a `UserDefaults` first-launch flag (not just reactively on a failed `sign()`), so the UI is never left showing a stale "attested" status after a reinstall. See `appattestkit-module-design.md` §8. |
 | Pairing transport | BLE/NFC only for v1; shared-link pairing considered and deferred (no rendezvous infrastructure needed). SAS confirmation is a hard gate, not a soft "unverified" warning. Default display name reuses the identicon word-triple. See `pairing-workflow.md`. |
+| Auth server stack | Kotlin/JVM + Ktor, using `veehaitch/devicecheck-appattest` for attestation/assertion verification. Chosen over Go/Node alternatives, which are fragmented across several small, low-visibility projects with no clear leader; this library is a single well-tested implementation on Maven Central built on Bouncy Castle + Jackson rather than hand-rolled parsing. See `AuthServer/README.md`. |
+| `clientDataHash` composition | **Revised.** `SHA256(challenge)` alone, not `SHA256(challenge ‖ identityPublicKey)`. The chosen verification library computes `clientDataHash` internally with no override seam; forking it to change one hash was judged worse than moving the identity binding server-side. `/challenge` now takes `identityPublicKey` and stores the association (single-use), checked at `/register`. Trade-off: the binding now depends on TLS integrity for those two calls rather than being provable independent of transport. See `account-keys-reference.md`. |

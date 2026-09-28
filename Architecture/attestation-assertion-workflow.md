@@ -66,20 +66,30 @@ State → `.keyGenerated(keyId:)`
 ### Step 5 — Fetch challenge (App implements, module calls)
 
 ```swift
-let challenge = try await transport.fetchChallenge()   // 32 bytes
+let challenge = try await transport.fetchChallenge(identityPublicKey: identityKey.publicKey.rawRepresentation)   // 32 bytes
 ```
 
 Server-side TTL **~15 minutes** for registration — longer than the 60s session TTL, because a cached attestation is bound to this challenge and the key can only be attested once (module doc §7a).
+
+**Revised:** `/challenge` now takes `identityPublicKey` as an input and stores
+`challenge → identityPublicKey` server-side (single-use, same TTL). This is
+where the identity binding lives now — see Step 6 and `account-keys-reference.md`.
 
 > Module calls it; app implements `AttestationTransport`. The module never knows a URL.
 
 ### Step 6 — Build `clientDataHash` (App)
 
 ```swift
-let clientDataHash = Data(SHA256.hash(data: challenge + identityKey.publicKey.rawRepresentation))
+let clientDataHash = Data(SHA256.hash(data: challenge))
 ```
 
-**This is the binding that makes the whole scheme work.** The App Attest key signs over a hash containing the identity public key, letting the server conclude that this identity key came from a genuine app on real hardware. Without it, any identity key could be attached to any valid attestation.
+**Revised (was: `SHA256(challenge + identityPublicKey)`).** Plain hash of the
+challenge — no identity binding inside it. The server-side verification
+library computes `clientDataHash` internally with no seam for a different
+formula, and forking it to change one hash was judged worse than moving the
+binding server-side (`account-keys-reference.md`). The identity binding is
+now enforced by Step 5's `challenge → identityPublicKey` association, checked
+at Step 10.
 
 > **App-owned** — the composition is app-specific. The module receives an opaque hash.
 
@@ -116,17 +126,18 @@ All four fields are **public** credentials. TLS in transit is sufficient; no app
 
 In order, all mandatory:
 
-1. Challenge exists, unconsumed, unexpired → mark consumed
+1. Challenge exists, unconsumed, unexpired → mark consumed; recover the `identityPublicKey` stored alongside it at issuance (Step 5)
 2. Parse CBOR; validate `x5c` chain to Apple's App Attest root
 3. Extract nonce from leaf cert extension `1.2.840.113635.100.8.2`
-4. `nonce == SHA256(challenge ‖ identityPublicKey)`
-5. `authData.rpIdHash == SHA256(teamId + "." + bundleId)`
-6. Counter is 0
-7. `keyId == SHA256(attestedPublicKey)`
+4. `nonce == SHA256(authData ‖ SHA256(challenge))`
+5. Submitted `identityPublicKey` equals the one stored against this challenge at issuance — this is the identity binding now (see `account-keys-reference.md`; was formerly inside the hash itself)
+6. `authData.rpIdHash == SHA256(teamId + "." + bundleId)`
+7. Counter is 0
+8. `keyId == SHA256(attestedPublicKey)`
 
 Stores `account_uuid`, `key_id`, `attest_pubkey`, `counter = 0`.
 
-**Discards `identityPublicKey` after step 4** — it is the most graph-linkable value on the server and has no further use (architecture doc §3, flow 1).
+**Discards `identityPublicKey` after step 5** — it is the most graph-linkable value on the server and has no further use (architecture doc §3, flow 1).
 
 **Idempotent on `keyId`:** if already registered, return the existing UUID rather than erroring. Handles the lost-response case.
 

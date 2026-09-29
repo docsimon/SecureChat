@@ -146,6 +146,21 @@ public actor AttestationCoordinator: AssertionSigning {
         try? store.clear()
         transition(to: .none)
     }
+
+    /// Harness only. Resets `regenerationCount` back to zero — the ONE thing
+    /// `debugReset()` deliberately never touches (see `LiveKeyStore.clear()`'s
+    /// own doc comment) and the one thing that otherwise has NO reset path at
+    /// all, in any build. That's intentional in shipping code — the counter
+    /// exists specifically so a bug can't silently re-arm the device's real,
+    /// finite lifetime key budget — but it also means a test device that
+    /// legitimately cycles through `maxKeyRegenerations` during heavy testing
+    /// (confirmed to happen in practice, not hypothetical) gets permanently
+    /// wedged with no way back, in a build where nothing here ever touches
+    /// the real production budget anyway. This exists so that's recoverable
+    /// here without it being reachable in a shipping build.
+    public func debugResetRegenerationBudget() {
+        try? store.store(regenerationCount: 0)
+    }
     #endif
 
     /// Call this — in production, not just tests — when the app observes

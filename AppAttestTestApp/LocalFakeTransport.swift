@@ -29,6 +29,13 @@ import AppAttestKit
 enum TransportEvent: Sendable {
     case challengeFetched(byteCount: Int)
     case submitted(accountUUID: String)
+    /// `statusCode == nil` means the request never got an HTTP response at
+    /// all (URLSession itself threw — no connection, DNS failure, Local
+    /// Network permission denied). A real status code means the server WAS
+    /// reached and responded with a rejection — a completely different
+    /// failure class from "couldn't reach it." See RealAttestationTransport's
+    /// `performRequest` for why this distinction matters.
+    case requestFailed(endpoint: String, statusCode: Int?, detail: String)
 }
 
 struct LocalFakeTransport: AttestationTransport {

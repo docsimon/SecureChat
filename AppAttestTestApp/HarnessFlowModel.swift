@@ -33,6 +33,18 @@ final class HarnessFlowModel {
     private(set) var activeStep: ActiveStep = .none
     private(set) var identityPublicKeyPrefix: String?
 
+    /// Guards `RealAttemptCounter` against over-counting within a single
+    /// attest() call. `transition()` fires the observer unconditionally, even
+    /// for a no-op re-transition to the SAME .keyGenerated(keyId:) — which
+    /// happens on every retry-loop re-entry into attemptRegistration() before
+    /// state ever advances past .keyGenerated (e.g. /challenge failing
+    /// repeatedly). Confirmed on a real device: 2 network retries before a
+    /// working attempt logged 3 "key generated" events for what was really
+    /// ONE generateKey() call. Reset at the start of each attest(); only a
+    /// genuinely NEW keyId (never a DIFFERENT one — same keyId means "still
+    /// the same generation, just observed again") increments the counter.
+    private var lastCountedKeyId: String?
+
     /// Local heuristic only — Apple exposes no remaining-budget API
     /// (confirmed against current docs this session). Counts real
     /// generateKey() calls via the .keyGenerated transition — but only
@@ -148,12 +160,33 @@ final class HarnessFlowModel {
                 }
                 await coordinator.restore()
                 let hadModuleState = await coordinator.currentState != .none
+                var purgeSucceeded = true
                 if hadModuleState {
-                    _ = await coordinator.acknowledgeKeyInvalidation()
+                    purgeSucceeded = await coordinator.acknowledgeKeyInvalidation()
+                    if !purgeSucceeded {
+                        // Real, visible failure — this used to be silently
+                        // reported as success (discarded return value), which
+                        // is exactly the wrong failure mode for a permanent
+                        // lockout. See AttestationCoordinator.debugResetRegenerationBudget
+                        // for why a harness-only reset exists at all: this
+                        // counter has no reset path in a shipping build, on
+                        // purpose, but a test device legitimately hits
+                        // maxKeyRegenerations from repeated testing, not a bug.
+                        self.log(.attestationFailed,
+                                 summary: "regeneration budget exhausted — using the harness-only debug reset to stay unblocked (never available in a shipping build)",
+                                 isError: true)
+                        #if DEBUG
+                        await coordinator.debugResetRegenerationBudget()
+                        purgeSucceeded = await coordinator.acknowledgeKeyInvalidation()
+                        #endif
+                    }
                 }
                 if hadIdentity || hadModuleState {
                     self.log(.identityKeyDeleted,
-                             summary: "first launch after install/reinstall — purged stale Keychain state from a previous install")
+                             summary: purgeSucceeded
+                                ? "first launch after install/reinstall — purged stale Keychain state from a previous install"
+                                : "first launch after install/reinstall — purge did NOT fully succeed, even after a debug regeneration-budget reset",
+                             isError: !purgeSucceeded)
                     self.startNewSession()
                 } else {
                     self.log(.restored, summary: "first launch — Keychain already clean, nothing to purge")
@@ -186,6 +219,7 @@ final class HarnessFlowModel {
     func attest() async {
         guard activeStep == .none else { return }
         activeStep = .attest
+        lastCountedKeyId = nil
         defer { activeStep = .none }
 
         // Existence check only — RealAttestationTransport reads the identity
@@ -359,7 +393,7 @@ final class HarnessFlowModel {
         switch newState {
         case .none:
             break
-        case .keyGenerated:
+        case .keyGenerated(let keyId):
             log(.attestationStepKeyGenerated, summary: "App Attest key generated — no network involved")
             // Only count transitions observed during an ACTIVE attest() call.
             // restore() can also transition into .keyGenerated merely by
@@ -368,7 +402,13 @@ final class HarnessFlowModel {
             // every launch, plus again inside the first-launch purge gate.
             // Counting those would inflate this heuristic on every ordinary
             // launch that happens to find a mid-flow-crashed state.
-            if activeStep == .attest {
+            //
+            // AND: only count it once per DISTINCT keyId within this call —
+            // see lastCountedKeyId's doc comment for why a retry loop can
+            // reflect the same .keyGenerated state multiple times with no
+            // new generateKey() call in between.
+            if activeStep == .attest, keyId != lastCountedKeyId {
+                lastCountedKeyId = keyId
                 RealAttemptCounter.increment()
             }
         case .attestationPending(_, let attestationData, _):
@@ -404,6 +444,16 @@ final class HarnessFlowModel {
         case .submitted(let accountUUID):
             log(.attestationStepSubmitted, summary: "POST /register → Auth Server",
                 detail: [DetailField(label: "Account UUID", value: accountUUID)])
+        case .requestFailed(let endpoint, let statusCode, let detail):
+            // This is what the coordinator's own .networkUnavailable label
+            // can't tell you: whether the server was ever actually reached.
+            // nil statusCode = it wasn't (real connectivity/permission
+            // problem); a real status = it was, and rejected the request —
+            // an entirely different thing to go fix.
+            let summary = statusCode.map { "\(endpoint) → HTTP \($0) (server reached, request rejected)" }
+                ?? "\(endpoint) → no response (server never reached)"
+            log(.attestationFailed, summary: summary,
+                detail: [DetailField(label: "Detail", value: detail)], isError: true)
         }
     }
 

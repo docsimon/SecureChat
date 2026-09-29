@@ -26,7 +26,6 @@ import Foundation
 import AppAttestKit
 
 enum RealAttestationTransportError: Error {
-    case serverError(status: Int, body: String)
     case decodingFailed
 }
 
@@ -40,10 +39,28 @@ struct RealAttestationTransport: AttestationTransport {
 
     func fetchChallenge() async throws -> Data {
         var components = URLComponents(url: baseURL.appendingPathComponent("challenge"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "identityPublicKey", value: identityPublicKeyBase64())]
+        // NOT components.queryItems — confirmed via a real device test that it
+        // leaves `+` and `/` completely unescaped (only `=` gets percent-
+        // encoded). Standard base64 uses `+` in its alphabet, and Ktor (like
+        // most web frameworks) decodes an unescaped `+` in a query string as
+        // a literal space, following the application/x-www-form-urlencoded
+        // convention — even though `+` is technically valid, unescaped, in
+        // RFC 3986's own query grammar. Verified directly against Redis: a
+        // `+` sent this way arrived on the server as a space, silently
+        // corrupting the value. Since the same identityPublicKey travels
+        // uncorrupted through /register's JSON body (no such ambiguity in
+        // JSON), the two values then mismatch — the `identity_mismatch`
+        // failure seen on a real device, intermittent because it only
+        // happens when a given key's base64 happens to contain `+`.
+        // Percent-encoding it ourselves, escaping everything outside the
+        // unreserved set, removes the ambiguity entirely rather than relying
+        // on the server happening to interpret it the way we intend.
+        var unreserved = CharacterSet.alphanumerics
+        unreserved.insert(charactersIn: "-._~")
+        let encodedKey = identityPublicKeyBase64().addingPercentEncoding(withAllowedCharacters: unreserved) ?? ""
+        components.percentEncodedQuery = "identityPublicKey=\(encodedKey)"
 
-        let (data, response) = try await URLSession.shared.data(from: components.url!)
-        try Self.checkStatus(response, data: data)
+        let (data, response) = try await performRequest(URLRequest(url: components.url!), endpoint: "GET /challenge")
 
         let decoded = try JSONDecoder().decode(ChallengeResponseBody.self, from: data)
         guard let challenge = Data(base64Encoded: decoded.challenge) else {
@@ -65,19 +82,63 @@ struct RealAttestationTransport: AttestationTransport {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        try Self.checkStatus(response, data: data)
+        let (data, _) = try await performRequest(urlRequest, endpoint: "POST /register")
 
         let decoded = try JSONDecoder().decode(RegisterResponseBody.self, from: data)
         onEvent(.submitted(accountUUID: decoded.accountUuid))
         return decoded.accountUuid
     }
 
-    private static func checkStatus(_ response: URLResponse, data: Data) throws {
+    /// The one place that decides what AttestationCoordinator sees for any
+    /// failure here. This matters a lot: the coordinator coerces ANY error
+    /// it doesn't recognize as `AttestationError` into `.networkUnavailable`
+    /// (AttestationCoordinator.swift's `attemptRegistration`/`submit`) — so
+    /// without this distinction, a genuine server-side rejection (bad
+    /// identity binding, expired challenge, malformed attestation) would be
+    /// indistinguishable in the app's own logs from "couldn't reach the Mac
+    /// at all." Confirmed as a real, live gap during a real-device test
+    /// session — both looked identical as "networkUnavailable" until this.
+    ///
+    /// - A true network-layer failure (URLSession itself throws — no
+    ///   connection, DNS failure, Local Network permission denied) is logged
+    ///   with no status code, then rethrown AS-IS. The coordinator's generic
+    ///   catch-all correctly maps this to `.networkUnavailable` — accurate
+    ///   in this case.
+    /// - An HTTP-level rejection is logged with the real status and body,
+    ///   then classified by status code — this split was itself a gap found
+    ///   while writing the real-server test checklist, not obvious up front:
+    ///   - **4xx** — a definitive business-logic rejection from OUR server
+    ///     (bad identity binding, expired challenge, malformed attestation).
+    ///     A retry with the same data will never succeed, so this throws
+    ///     `AttestationError.serverRejected(...)`, which the coordinator
+    ///     passes through UNCHANGED (terminal) rather than coercing.
+    ///   - **5xx** — our own server had a transient problem (a DB hiccup,
+    ///     for example) that a retry might well resolve once it clears.
+    ///     Treating this as terminal would give up on failures that are
+    ///     often self-healing, so this throws `AttestationError.retryable(...)`
+    ///     instead, which the coordinator retries with backoff like
+    ///     `.networkUnavailable`.
+    private func performRequest(_ request: URLRequest, endpoint: String) async throws -> (Data, URLResponse) {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            onEvent(.requestFailed(endpoint: endpoint, statusCode: nil, detail: "\(error)"))
+            throw error
+        }
+
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw RealAttestationTransportError.serverError(status: status, body: String(decoding: data, as: UTF8.self))
+            let body = String(decoding: data, as: UTF8.self)
+            onEvent(.requestFailed(endpoint: endpoint, statusCode: status, detail: body))
+            if (500..<600).contains(status) {
+                throw AttestationError.retryable("\(endpoint) → HTTP \(status): \(body)")
+            }
+            throw AttestationError.serverRejected("\(endpoint) → HTTP \(status): \(body)")
         }
+
+        return (data, response)
     }
 }
 

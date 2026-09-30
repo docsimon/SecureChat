@@ -182,6 +182,13 @@ final class HarnessFlowModel {
                     }
                 }
                 if hadIdentity || hadModuleState {
+                    // Stale from whatever registration this Keychain state
+                    // belonged to — a reinstall guarantees the NEXT
+                    // registration (if any) will mint a different
+                    // account_uuid (v1: no re-attestation), so keeping the
+                    // old one around would let sign() try to open a session
+                    // for an account this device can no longer prove it owns.
+                    RegisteredAccountStore.current = nil
                     self.log(.identityKeyDeleted,
                              summary: purgeSucceeded
                                 ? "first launch after install/reinstall — purged stale Keychain state from a previous install"
@@ -260,8 +267,15 @@ final class HarnessFlowModel {
         }
     }
 
-    /// Cheap and repeatable, unlike attestation — purely local, no network
-    /// at all (confirmed via web search this session).
+    /// The Secure Enclave signing itself is cheap, repeatable, purely local,
+    /// no network at all (confirmed via web search this session). Whether
+    /// this ALSO opens a real session against the Auth Server depends on the
+    /// backend — .mock never did and still doesn't (nothing to submit to);
+    /// .localDocker/.custom now actually call /session/nonce + /session,
+    /// which they did NOT do before this was found and fixed: this used to
+    /// fabricate a nonce locally and sign it with no server involved at all,
+    /// under ANY backend — "Assertion Signed" could appear in History with
+    /// no /session request ever reaching the server. See SessionClient.swift.
     func sign() async {
         guard activeStep == .none else { return }
         guard let coordinator else {
@@ -271,10 +285,30 @@ final class HarnessFlowModel {
         activeStep = .sign
         defer { activeStep = .none }
         do {
-            let nonce = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
-            let signature = try await coordinator.sign(Data(SHA256.hash(data: nonce)))
-            log(.assertionSigned, summary: "assertion signed (\(signature.count) bytes)",
-                detail: [DetailField(label: "Signature size", value: "\(signature.count) bytes")])
+            switch transportBackend {
+            case .mock:
+                let nonce = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
+                let signature = try await coordinator.sign(Data(SHA256.hash(data: nonce)))
+                log(.assertionSigned, summary: "assertion signed, mock only — no server involved (\(signature.count) bytes)",
+                    detail: [DetailField(label: "Signature size", value: "\(signature.count) bytes")])
+            case .localDocker, .custom:
+                guard let accountUuid = RegisteredAccountStore.current else {
+                    log(.signFailed, summary: "no stored account UUID — Attest must complete successfully first", isError: true)
+                    return
+                }
+                let client = SessionClient(
+                    baseURL: currentBaseURL(),
+                    signer: coordinator,
+                    onEvent: { [weak self] event in
+                        Task { @MainActor in self?.handleTransportEvent(event) }
+                    })
+                // No explicit success log here, deliberately — matching how
+                // attest() doesn't log its own success either: the real
+                // events (.challengeFetched, .sessionOpened, ...) come
+                // through onEvent as they actually happen, so logging again
+                // here would duplicate the one that matters.
+                _ = try await client.openSession(accountUuid: accountUuid)
+            }
         } catch let error as AttestationError {
             log(.signFailed, summary: error.diagnosticName, isError: true)
             // Confirmed on real hardware (a delete+reinstall's orphaned keyId):
@@ -294,6 +328,7 @@ final class HarnessFlowModel {
                 // would reintroduce the two-path complexity that decision
                 // deliberately traded away for a faster v1 ship.
                 IdentityKeyStore.delete()
+                RegisteredAccountStore.current = nil
                 identityPublicKeyPrefix = nil
                 let recovered = await coordinator.acknowledgeKeyInvalidation()
                 identityGenerated = false
@@ -316,6 +351,7 @@ final class HarnessFlowModel {
         if let coordinator {
             await coordinator.debugReset()
         }
+        RegisteredAccountStore.current = nil
         attested = false
         log(.moduleReset, summary: "module state cleared — identity key kept, matches Option A. Next Attest spends a real key generation.")
         startNewSession()
@@ -326,6 +362,7 @@ final class HarnessFlowModel {
 
     func deleteIdentityKey() async {
         IdentityKeyStore.delete()
+        RegisteredAccountStore.current = nil
         identityGenerated = false
         attested = false
         identityPublicKeyPrefix = nil
@@ -374,16 +411,20 @@ final class HarnessFlowModel {
         switch transportBackend {
         case .mock:
             return LocalFakeTransport(onEvent: onEvent)
-        case .localDocker:
+        case .localDocker, .custom:
             return RealAttestationTransport(
-                baseURL: AuthServerConfig.baseURL,
+                baseURL: currentBaseURL(),
                 identityPublicKeyBase64: identityPublicKeyBase64,
                 onEvent: onEvent)
-        case .custom(let url):
-            return RealAttestationTransport(
-                baseURL: url,
-                identityPublicKeyBase64: identityPublicKeyBase64,
-                onEvent: onEvent)
+        }
+    }
+
+    /// Shared by makeTransport() and sign()'s real-backend branch — both
+    /// need to agree on which server they're pointed at.
+    private func currentBaseURL() -> URL {
+        switch transportBackend {
+        case .mock, .localDocker: return AuthServerConfig.baseURL
+        case .custom(let url): return url
         }
     }
 
@@ -442,8 +483,14 @@ final class HarnessFlowModel {
         case .challengeFetched(let byteCount):
             log(.attestationStepChallenge, summary: "GET /challenge → \(byteCount) random bytes")
         case .submitted(let accountUUID):
+            // Persisted, not just logged — sign() needs this later to open a
+            // real session, since AssertionSigning never hands the app a
+            // keyId to use instead. See RegisteredAccountStore.swift.
+            RegisteredAccountStore.current = accountUUID
             log(.attestationStepSubmitted, summary: "POST /register → Auth Server",
                 detail: [DetailField(label: "Account UUID", value: accountUUID)])
+        case .sessionOpened(let tokenByteCount):
+            log(.assertionSigned, summary: "POST /session → Auth Server, session token issued (\(tokenByteCount) bytes)")
         case .requestFailed(let endpoint, let statusCode, let detail):
             // This is what the coordinator's own .networkUnavailable label
             // can't tell you: whether the server was ever actually reached.

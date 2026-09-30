@@ -53,7 +53,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		6F16B55B75DA48C8B0E137C0 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		6F16B55B75DA48C8B0E137C0 /* Exceptions for "AppAttestTestApp" folder in "AppAttestTestApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -86,7 +86,7 @@
 		CA3468FB3049D39300C50190 /* AppAttestTestApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				6F16B55B75DA48C8B0E137C0 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				6F16B55B75DA48C8B0E137C0 /* Exceptions for "AppAttestTestApp" folder in "AppAttestTestApp" target */,
 			);
 			path = AppAttestTestApp;
 			sourceTree = "<group>";

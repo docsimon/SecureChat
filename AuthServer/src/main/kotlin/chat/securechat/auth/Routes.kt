@@ -9,6 +9,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.Serializable
 import java.util.Base64
+import java.util.UUID
 
 // Standard base64 (with padding), not URL-safe: `keyId` comes straight from
 // DCAppAttestService.generateKey() as standard base64 and the app doesn't
@@ -33,7 +34,11 @@ data class RegisterResponse(val accountUuid: String)
 
 @Serializable
 data class SessionRequest(
-    val keyId: String,
+    // NOT keyId — deliberately. AssertionSigning.sign(_:) never exposes keyId
+    // to the app (by module design), so the app can never supply it here.
+    // account_uuid is what the app is actually meant to hold onto after
+    // registration (architecture-decisions.md: "Client stores the UUID").
+    val accountUuid: String,
     val assertion: String,
     val nonce: String,
     val body: String,
@@ -120,8 +125,8 @@ fun Routing.authRoutes(
             badRequest("nonce_invalid_or_expired")
         }
 
-        val keyId = request.keyId.decodeBase64()
-        val account = accounts.findByKeyId(keyId) ?: notFound("unknown_key_id")
+        val account = accounts.findByAccountUuid(UUID.fromString(request.accountUuid))
+            ?: notFound("unknown_account")
 
         val bodyBytes = request.body.decodeBase64()
         val clientData = nonceBytes + bodyBytes
@@ -141,7 +146,7 @@ fun Routing.authRoutes(
         }
 
         val newCounter = assertion.authenticatorData.signCount
-        if (!accounts.advanceCounter(keyId, account.counter, newCounter)) {
+        if (!accounts.advanceCounter(account.keyId, account.counter, newCounter)) {
             // Another request for the same key won the race in between our
             // read and write. Reject rather than silently accept a stale
             // counter transition.

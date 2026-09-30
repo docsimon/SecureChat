@@ -60,7 +60,7 @@ struct RealAttestationTransport: AttestationTransport {
         let encodedKey = identityPublicKeyBase64().addingPercentEncoding(withAllowedCharacters: unreserved) ?? ""
         components.percentEncodedQuery = "identityPublicKey=\(encodedKey)"
 
-        let (data, response) = try await performRequest(URLRequest(url: components.url!), endpoint: "GET /challenge")
+        let data = try await performAuthServerRequest(URLRequest(url: components.url!), endpoint: "GET /challenge", onEvent: onEvent)
 
         let decoded = try JSONDecoder().decode(ChallengeResponseBody.self, from: data)
         guard let challenge = Data(base64Encoded: decoded.challenge) else {
@@ -82,64 +82,13 @@ struct RealAttestationTransport: AttestationTransport {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
-        let (data, _) = try await performRequest(urlRequest, endpoint: "POST /register")
+        let data = try await performAuthServerRequest(urlRequest, endpoint: "POST /register", onEvent: onEvent)
 
         let decoded = try JSONDecoder().decode(RegisterResponseBody.self, from: data)
         onEvent(.submitted(accountUUID: decoded.accountUuid))
         return decoded.accountUuid
     }
 
-    /// The one place that decides what AttestationCoordinator sees for any
-    /// failure here. This matters a lot: the coordinator coerces ANY error
-    /// it doesn't recognize as `AttestationError` into `.networkUnavailable`
-    /// (AttestationCoordinator.swift's `attemptRegistration`/`submit`) — so
-    /// without this distinction, a genuine server-side rejection (bad
-    /// identity binding, expired challenge, malformed attestation) would be
-    /// indistinguishable in the app's own logs from "couldn't reach the Mac
-    /// at all." Confirmed as a real, live gap during a real-device test
-    /// session — both looked identical as "networkUnavailable" until this.
-    ///
-    /// - A true network-layer failure (URLSession itself throws — no
-    ///   connection, DNS failure, Local Network permission denied) is logged
-    ///   with no status code, then rethrown AS-IS. The coordinator's generic
-    ///   catch-all correctly maps this to `.networkUnavailable` — accurate
-    ///   in this case.
-    /// - An HTTP-level rejection is logged with the real status and body,
-    ///   then classified by status code — this split was itself a gap found
-    ///   while writing the real-server test checklist, not obvious up front:
-    ///   - **4xx** — a definitive business-logic rejection from OUR server
-    ///     (bad identity binding, expired challenge, malformed attestation).
-    ///     A retry with the same data will never succeed, so this throws
-    ///     `AttestationError.serverRejected(...)`, which the coordinator
-    ///     passes through UNCHANGED (terminal) rather than coercing.
-    ///   - **5xx** — our own server had a transient problem (a DB hiccup,
-    ///     for example) that a retry might well resolve once it clears.
-    ///     Treating this as terminal would give up on failures that are
-    ///     often self-healing, so this throws `AttestationError.retryable(...)`
-    ///     instead, which the coordinator retries with backoff like
-    ///     `.networkUnavailable`.
-    private func performRequest(_ request: URLRequest, endpoint: String) async throws -> (Data, URLResponse) {
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            onEvent(.requestFailed(endpoint: endpoint, statusCode: nil, detail: "\(error)"))
-            throw error
-        }
-
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(decoding: data, as: UTF8.self)
-            onEvent(.requestFailed(endpoint: endpoint, statusCode: status, detail: body))
-            if (500..<600).contains(status) {
-                throw AttestationError.retryable("\(endpoint) → HTTP \(status): \(body)")
-            }
-            throw AttestationError.serverRejected("\(endpoint) → HTTP \(status): \(body)")
-        }
-
-        return (data, response)
-    }
 }
 
 private struct ChallengeResponseBody: Decodable {

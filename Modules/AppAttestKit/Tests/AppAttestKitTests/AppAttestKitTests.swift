@@ -212,8 +212,8 @@ struct RetryPolicyTests {
         #expect(observer.failures.first?.error == .networkUnavailable)
     }
 
-    @Test("keyInvalid regenerates the key exactly once, and the count is persisted")
-    func keyInvalidRegeneratesExactlyOnce() async throws {
+    @Test("keyInvalid regenerates with a fresh key, not the dead one")
+    func keyInvalidRegeneratesWithFreshKey() async throws {
         let store = InMemoryKeyStore()
         let (coordinator, service, _, _, _) = makeCoordinator(
             generateKeyResults: [.success("key-1"), .success("key-2")],
@@ -226,16 +226,15 @@ struct RetryPolicyTests {
         #expect(final == .attested(keyId: "key-2"))
         #expect(await service.generateKeyCallCount == 2)
         #expect(await service.issuedKeyIds == ["key-1", "key-2"])
-        #expect(try store.loadRegenerationCount() == 1)
     }
 
-    @Test("The regeneration cap is enforced and reported as .exhausted")
-    func regenerationCapIsEnforced() async throws {
+    @Test("A persistent keyInvalid failure still eventually exhausts via maxAttempts — no separate regeneration cap needed")
+    func persistentKeyInvalidExhaustsViaMaxAttempts() async throws {
         let store = InMemoryKeyStore()
         let (coordinator, service, _, _, observer) = makeCoordinator(
             // Every single attestKey call fails with keyInvalid — a
             // pathological case a real device should never hit, but exactly
-            // what the cap exists to survive.
+            // what maxAttempts exists to bound regardless of error kind.
             attestKeyResults: Array(repeating: .failure(AttestationError.keyInvalid), count: 10),
             keyStore: store
         )
@@ -247,11 +246,10 @@ struct RetryPolicyTests {
             #expect(error == .exhausted)
         }
 
-        // Default policy caps regenerations at 3 (Policy.maxKeyRegenerations):
-        // the original key + 3 regenerations = 4 generateKey calls, and the
-        // 4th failure is the one that trips the cap rather than trying again.
-        #expect(await service.generateKeyCallCount == 4)
-        #expect(try store.loadRegenerationCount() == 3)
+        // Default policy caps the WHOLE call at 5 attempts (Policy.maxAttempts),
+        // with no separate, smaller cap on regenerations specifically — every
+        // attempt regenerates a fresh key since the old one's already dead.
+        #expect(await service.generateKeyCallCount == 5)
         #expect(observer.failures.last?.error == .exhausted)
     }
 
@@ -346,9 +344,8 @@ struct KeyInvalidationAcknowledgementTests {
 
         // Simulates: the app called sign(), got .keyInvalid back, and is
         // telling the coordinator about it.
-        let recovered = await coordinator.acknowledgeKeyInvalidation()
+        await coordinator.acknowledgeKeyInvalidation()
 
-        #expect(recovered)
         #expect(await coordinator.currentState == .none)
         #expect(try store.loadIsAttested() == false)
         #expect(try store.loadKeyId() == nil)
@@ -358,27 +355,22 @@ struct KeyInvalidationAcknowledgementTests {
         #expect(await service.generateKeyCallCount == 2)
     }
 
-    @Test("Shares the regeneration budget with the retry loop's own keyInvalid handling")
-    func sharesRegenerationBudgetWithRetryLoop() async throws {
+    @Test("Can be called repeatedly with no cap — each call just resets state for a fresh attestation")
+    func canBeCalledRepeatedlyWithNoCap() async throws {
         let store = InMemoryKeyStore()
-        // The first attestKey() call fails mid-flow, spending 1 of 3 via the
-        // retry loop's own handling; the rest succeed.
         let (coordinator, _, _, _, _) = makeCoordinator(
             generateKeyResults: [.success("key-1"), .success("key-2")],
             attestKeyResults: [.failure(AttestationError.keyInvalid), .success(testAttestation)],
             keyStore: store
         )
         _ = try await coordinator.ensureAttested(binding: identityBinding)
-        #expect(try store.loadRegenerationCount() == 1)
 
-        // If these two paths tracked separate budgets, this would incorrectly
-        // allow 3 MORE regenerations on top of the 1 already spent, instead
-        // of sharing one capped pool of 3 total.
-        #expect(await coordinator.acknowledgeKeyInvalidation())
-        #expect(try store.loadRegenerationCount() == 2)
-        #expect(await coordinator.acknowledgeKeyInvalidation())
-        #expect(try store.loadRegenerationCount() == 3)
-        #expect(await coordinator.acknowledgeKeyInvalidation() == false)
-        #expect(try store.loadRegenerationCount() == 3)
+        // Previously this would have been bounded by a shared regeneration
+        // budget (3 total) — removed entirely, so this must keep succeeding
+        // well past what used to be the cap.
+        for _ in 0..<5 {
+            await coordinator.acknowledgeKeyInvalidation()
+            #expect(await coordinator.currentState == .none)
+        }
     }
 }

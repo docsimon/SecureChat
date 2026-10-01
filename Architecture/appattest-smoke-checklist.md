@@ -85,8 +85,8 @@ Last updated 2026-09-21.
 7. **CRITICAL — repeated normal launches must never re-purge.** This is the
    single most important check in this document. If the first-launch gate
    is ever wrong in this direction — firing on an *ordinary* launch instead
-   of only the first one after install — it repeatedly spends the device's
-   real, finite key-generation budget until exhausted, in days, silently.
+   of only the first one after install — it repeatedly spends a real
+   `generateKey()` call on every single launch, forever, silently.
    Immediately after step 6 (so the flag is now set and the state is
    genuinely `attested`):
    - Force-quit and relaunch **3 or more times in a row**, without

@@ -26,7 +26,6 @@ final class InMemoryKeyStore: AttestationKeyStore, @unchecked Sendable {
     private var keyId: String?
     private var isAttested = false
     private var cached: (object: Data, challenge: Data)?
-    private var regenerationCount = 0
 
     /// Seeds the store as if a previous run got partway through the flow
     /// before crashing — used by the "resume after crash" tests to start
@@ -34,12 +33,10 @@ final class InMemoryKeyStore: AttestationKeyStore, @unchecked Sendable {
     /// whole flow just to get there.
     init(keyId: String? = nil,
          isAttested: Bool = false,
-         cachedAttestation: (object: Data, challenge: Data)? = nil,
-         regenerationCount: Int = 0) {
+         cachedAttestation: (object: Data, challenge: Data)? = nil) {
         self.keyId = keyId
         self.isAttested = isAttested
         self.cached = cachedAttestation
-        self.regenerationCount = regenerationCount
     }
 
     func loadKeyId() throws -> String? {
@@ -77,21 +74,7 @@ final class InMemoryKeyStore: AttestationKeyStore, @unchecked Sendable {
         cached = nil
     }
 
-    func loadRegenerationCount() throws -> Int {
-        lock.lock(); defer { lock.unlock() }
-        return regenerationCount
-    }
-
-    func store(regenerationCount: Int) throws {
-        lock.lock(); defer { lock.unlock() }
-        self.regenerationCount = regenerationCount
-    }
-
-    /// Mirrors `LiveKeyStore.clear()`: deliberately leaves `regenerationCount`
-    /// untouched. If a test asserts the regeneration cap actually caps
-    /// something, this line is what makes that assertion meaningful — get it
-    /// wrong here and every regeneration-limit test would pass for the wrong
-    /// reason.
+    /// Mirrors `LiveKeyStore.clear()`.
     func clear() throws {
         lock.lock(); defer { lock.unlock() }
         keyId = nil

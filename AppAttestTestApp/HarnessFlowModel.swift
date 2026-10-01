@@ -152,34 +152,20 @@ final class HarnessFlowModel {
                 // Conditional on purge is required, not optional: a genuine
                 // first-ever install ALSO has this flag absent, with nothing
                 // in Keychain to purge. Calling acknowledgeKeyInvalidation()
-                // unconditionally here would spend budget on a brand-new
-                // user's first launch for nothing.
+                // unconditionally here would spend a real generateKey() call
+                // on a brand-new user's first launch for nothing.
                 let hadIdentity = IdentityKeyStore.exists()
                 if hadIdentity {
                     IdentityKeyStore.delete()
                 }
                 await coordinator.restore()
                 let hadModuleState = await coordinator.currentState != .none
-                var purgeSucceeded = true
                 if hadModuleState {
-                    purgeSucceeded = await coordinator.acknowledgeKeyInvalidation()
-                    if !purgeSucceeded {
-                        // Real, visible failure — this used to be silently
-                        // reported as success (discarded return value), which
-                        // is exactly the wrong failure mode for a permanent
-                        // lockout. See AttestationCoordinator.debugResetRegenerationBudget
-                        // for why a harness-only reset exists at all: this
-                        // counter has no reset path in a shipping build, on
-                        // purpose, but a test device legitimately hits
-                        // maxKeyRegenerations from repeated testing, not a bug.
-                        self.log(.attestationFailed,
-                                 summary: "regeneration budget exhausted — using the harness-only debug reset to stay unblocked (never available in a shipping build)",
-                                 isError: true)
-                        #if DEBUG
-                        await coordinator.debugResetRegenerationBudget()
-                        purgeSucceeded = await coordinator.acknowledgeKeyInvalidation()
-                        #endif
-                    }
+                    // Always succeeds now — no regeneration cap to exhaust.
+                    // (Earlier revisions could fail here and needed a
+                    // harness-only debug-reset fallback; removed along with
+                    // the cap itself, see account-keys-reference.md.)
+                    await coordinator.acknowledgeKeyInvalidation()
                 }
                 if hadIdentity || hadModuleState {
                     // Stale from whatever registration this Keychain state
@@ -190,10 +176,7 @@ final class HarnessFlowModel {
                     // for an account this device can no longer prove it owns.
                     RegisteredAccountStore.current = nil
                     self.log(.identityKeyDeleted,
-                             summary: purgeSucceeded
-                                ? "first launch after install/reinstall — purged stale Keychain state from a previous install"
-                                : "first launch after install/reinstall — purge did NOT fully succeed, even after a debug regeneration-budget reset",
-                             isError: !purgeSucceeded)
+                             summary: "first launch after install/reinstall — purged stale Keychain state from a previous install")
                     self.startNewSession()
                 } else {
                     self.log(.restored, summary: "first launch — Keychain already clean, nothing to purge")
@@ -330,13 +313,11 @@ final class HarnessFlowModel {
                 IdentityKeyStore.delete()
                 RegisteredAccountStore.current = nil
                 identityPublicKeyPrefix = nil
-                let recovered = await coordinator.acknowledgeKeyInvalidation()
+                await coordinator.acknowledgeKeyInvalidation()
                 identityGenerated = false
                 attested = false
-                log(.identityKeyDeleted, summary: recovered
-                    ? "key invalidation acknowledged — identity and module state both cleared (v1 policy), next Generate/Attest starts fully fresh"
-                    : "key invalidation acknowledged, but regeneration budget exhausted",
-                    isError: !recovered)
+                log(.identityKeyDeleted,
+                    summary: "key invalidation acknowledged — identity and module state both cleared (v1 policy), next Generate/Attest starts fully fresh")
                 startNewSession()
             }
         } catch {

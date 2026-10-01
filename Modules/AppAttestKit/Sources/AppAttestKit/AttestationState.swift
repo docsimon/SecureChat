@@ -19,8 +19,9 @@ public enum AttestationState: Sendable, Equatable {
     case none
 
     /// An App Attest key exists and its `keyId` is persisted.
-    /// Persisted BEFORE calling `attestKey` — a crash here must not orphan the key,
-    /// because key generations are capped per device for the device's lifetime.
+    /// Persisted BEFORE calling `attestKey` — a crash here must not orphan the
+    /// key, since `generateKey()` is a real Secure Enclave operation that
+    /// shouldn't be repeated needlessly even without a local cap (§8a).
     case keyGenerated(keyId: String)
 
     /// `attestKey` returned but the server has not confirmed registration.

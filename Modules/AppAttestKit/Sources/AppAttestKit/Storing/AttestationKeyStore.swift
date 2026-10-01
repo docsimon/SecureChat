@@ -22,9 +22,5 @@ protocol AttestationKeyStore: Sendable {
     func loadAttestation() throws -> (object: Data, challenge: Data)?
     func store(attestation: Data, challenge: Data) throws
     func clearAttestation() throws
-    /// Persisted across launches so a bug cannot loop and burn the device's
-    /// lifetime key budget.
-    func loadRegenerationCount() throws -> Int
-    func store(regenerationCount: Int) throws
     func clear() throws
 }

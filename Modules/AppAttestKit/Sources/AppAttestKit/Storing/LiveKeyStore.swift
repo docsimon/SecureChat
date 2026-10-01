@@ -13,10 +13,10 @@ import Security
 /// Splits storage across two backends, matching the two different sensitivity
 /// levels called out in the docs:
 ///
-///   - **Keychain** — `keyId`, the "server confirmed" flag, and the
-///     regeneration counter. Small values, and `keyId` in particular is a
-///     persistent per-device identifier (architecture doc §10), which is
-///     exactly what the Keychain's access-control model is for.
+///   - **Keychain** — `keyId` and the "server confirmed" flag. Small values,
+///     and `keyId` in particular is a persistent per-device identifier
+///     (architecture doc §10), which is exactly what the Keychain's
+///     access-control model is for.
 ///   - **A file in Application Support** — the cached attestation object +
 ///     the challenge it was built from. ~5KB, too large to be a good Keychain
 ///     fit, and — importantly — the attestation object is a PUBLIC credential
@@ -36,7 +36,6 @@ struct LiveKeyStore: AttestationKeyStore {
     private enum Account {
         static let keyId = "keyId"
         static let isAttested = "isAttested"
-        static let regenerationCount = "regenerationCount"
     }
 
     // MARK: AttestationKeyStore — keyId
@@ -57,22 +56,6 @@ struct LiveKeyStore: AttestationKeyStore {
 
     func store(isAttested: Bool) throws {
         try storeString(isAttested ? "true" : "false", account: Account.isAttested)
-    }
-
-    // MARK: AttestationKeyStore — regeneration counter
-    //
-    // NOTE: deliberately never touched by `clear()` below. See the comment
-    // there — resetting this on every clear would defeat the entire point of
-    // persisting it.
-
-    func loadRegenerationCount() throws -> Int {
-        guard let raw = try loadString(account: Account.regenerationCount),
-              let count = Int(raw) else { return 0 }
-        return count
-    }
-
-    func store(regenerationCount: Int) throws {
-        try storeString(String(regenerationCount), account: Account.regenerationCount)
     }
 
     // MARK: AttestationKeyStore — cached attestation (file-backed)
@@ -106,13 +89,9 @@ struct LiveKeyStore: AttestationKeyStore {
 
     // MARK: AttestationKeyStore — full reset
 
-    /// Wipes `keyId`, the attested flag, and the cached attestation.
-    ///
-    /// Deliberately does **not** touch `regenerationCount`. This is called
+    /// Wipes `keyId`, the attested flag, and the cached attestation. Called
     /// right after a `keyInvalid`/`challengeExpired` failure to discard the
-    /// dead key (module doc §7) — but the counter exists specifically to
-    /// survive that reset, so a crash-loop through this exact path can't
-    /// silently re-arm the device's lifetime key budget. See `AttestationKeyStore`.
+    /// dead key (module doc §7), and by the harness's debug reset.
     func clear() throws {
         try deleteItem(account: Account.keyId)
         try deleteItem(account: Account.isAttested)

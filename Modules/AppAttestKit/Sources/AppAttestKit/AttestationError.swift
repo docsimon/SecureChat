@@ -36,19 +36,22 @@ public enum AttestationError: Error, Sendable, Equatable {
     /// Our server rejected the attestation. Terminal — a retry will not help.
     case serverRejected(String)
 
-    /// Cached attestation outlived its challenge. The one bounded case where
-    /// regenerating a key is correct — capped, see `Policy.maxKeyRegenerations`.
+    /// Cached attestation outlived its challenge. The other case where
+    /// regenerating a key is correct — in both this and `.keyInvalid`, the
+    /// old key is genuinely unusable, not just slow or temporarily flaky.
     case challengeExpired
 
-    /// Retry budget exhausted.
+    /// `Policy.maxAttempts` reached within a single `ensureAttested()` call.
     case exhausted
 
     /// Assertion attempted before registration completed.
     case notAttested
 
-    /// THE CARDINAL RULE. Calling `generateKey()` on any other error will
-    /// eventually exhaust the device's lifetime key budget and lock the user
-    /// out permanently, with no recovery path.
+    /// THE CARDINAL RULE. Calling `generateKey()` on anything else treats a
+    /// transient or server-side problem as if the key itself were broken,
+    /// burning a real Secure Enclave operation for no reason — regenerate
+    /// only when Apple (or our own one-shot bookkeeping) has actually said
+    /// this specific key no longer works.
     var requiresNewKey: Bool {
         switch self {
         case .keyInvalid, .challengeExpired: return true

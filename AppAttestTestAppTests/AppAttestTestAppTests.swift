@@ -277,6 +277,45 @@ struct HarnessSessionTests {
         #expect(session.outcomeColor == .green) // NOT .red — this is the exact bug that shipped once
     }
 
+    @Test("REGRESSION: a successful attestation followed by a LATER, unrelated Sign failure must not read as plain success")
+    func signFailureAfterAttestationIsFlagged() {
+        var session = HarnessSession()
+        session.events = [
+            Self.event(.attestationStarted),
+            Self.event(.attestationFailed, isError: true),   // retried, same as the clean-success-after-retry case...
+            Self.event(.attestationStepSubmitted),           // ...attestation genuinely succeeded...
+            Self.event(.signFailed, isError: true)           // ...but THEN Sign failed. Found on a real device:
+            // the Sessions screen showed "Attested (after a retry)" here — true about the
+            // attestation, but silently hiding that Sign subsequently failed.
+        ]
+
+        #expect(session.outcomeLabel == "Attested, but a later Sign failed")
+        #expect(session.outcomeColor == .orange) // neither the plain-success green nor the pure-failure red
+    }
+
+    @Test("REGRESSION: a Sign failure followed by a LATER successful retry must not stay stuck flagged forever")
+    func signFailureFollowedByRetrySucceedingClearsTheFlag() {
+        var session = HarnessSession()
+        session.events = [
+            Self.event(.attestationStepSubmitted),
+            Self.event(.signFailed, isError: true),    // first Sign attempt failed...
+            Self.event(.assertionSigned)               // ...but a later retry succeeded. Found on a real
+            // device immediately after fixing the inverse bug: checking "did a signFailed
+            // event ever happen" instead of "was the MOST RECENT one a failure" left this
+            // stuck on the warning state even after the user successfully signed again.
+        ]
+
+        // NOT plain "Attested" — hasFailure is a blanket check across every
+        // event, so the earlier signFailed still makes it true even though
+        // lastSignOutcomeIsFailure correctly reads false. "(after a retry)"
+        // is honest here (something DID need a retry) even though it's
+        // ambiguous about which step — the detail view has the exact
+        // sequence. What matters for this regression is the warning state
+        // from signFailureAfterAttestationIsFlagged is GONE, not stuck.
+        #expect(session.outcomeLabel == "Attested (after a retry)")
+        #expect(session.outcomeColor == .green)
+    }
+
     @Test("REGRESSION: a session that only ever restored into an already-attested state reads as Attested (restored), not In progress")
     func restoredAttestedIsNotInProgress() {
         var session = HarnessSession()

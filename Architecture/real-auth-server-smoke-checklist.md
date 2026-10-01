@@ -81,12 +81,17 @@ behavior. Included so the *symptom* is documented if one ever resurfaces.
 | `challenge_invalid_or_expired` | Challenge was never issued, already consumed, or outlived its 15-minute TTL. Hard to provoke normally (15 min is a long wait); can be simulated by manually deleting the Redis key (`DEL challenge:register:<value>`) between fetching it and submitting | Same as above, detail contains this code |
 | `attestation_invalid:<ExceptionClassName>` | The attestation object itself failed verification (bad chain, wrong rpIdHash, non-zero counter, wrong environment). Should not happen from a genuine device in the correct App Attest environment — if it does, check `APPATTEST_ENVIRONMENT`/`APPATTEST_TEAM_ID`/`APPATTEST_BUNDLE_ID` in `AuthServer/.env` match the real entitlement | Server logs show the specific exception class server-side even though the client only sees the generic message |
 
-### D. Regeneration budget / key invalidation
+### D. Key regeneration (no local cap)
+
+`Policy.maxKeyRegenerations` and its `regenerationCount` bookkeeping were
+removed — see `appattestkit-module-design.md` §8a. There is no device-lifetime
+budget to track and no `exhausted`/debug-reset fallback to exercise anymore;
+`acknowledgeKeyInvalidation()` now just regenerates, every time, with no cap.
 
 | # | Provoke | Expected | Watch for |
 |---|---|---|---|
-| D1 | Force several genuine `.keyInvalid`/reinstall cycles in a row (see Suite 2) until `regenerationCount` hits 3 | `acknowledgeKeyInvalidation()` returns false, harness logs "regeneration budget exhausted" *visibly*, then (DEBUG only) auto-resets and retries | The failure must be a real, visible log entry — not silently reported as success (the bug fixed this session) |
-| D2 | During D1, count how many *real* key generations actually happened vs. how many "App Attest Key Generated" log lines appeared | These should now match — retry-loop reflections of the same `keyId` (e.g. from B1/B4's retries) must not inflate the count | Regression check for the over-counting bug fixed this session (`lastCountedKeyId` guard in `HarnessFlowModel`) |
+| D1 | Force several genuine `.keyInvalid`/reinstall cycles in a row (see Suite 2) | Each cycle regenerates cleanly via `acknowledgeKeyInvalidation()` — no `exhausted`, no debug-reset fallback, no decisional branching on a call count anywhere in the path | Confirms the removal didn't leave any stray dependency on a counter that no longer exists |
+| D2 | During D1, count how many *real* key generations actually happened vs. how many "App Attest Key Generated" log lines appeared | These should match — retry-loop reflections of the same `keyId` (e.g. from B1/B4's retries) must not inflate the count | Regression check for the over-counting bug fixed this session (`lastCountedKeyId` guard in `HarnessFlowModel`) — unrelated to the cap removal, still worth checking here |
 
 ### E. Concurrency
 
@@ -108,12 +113,12 @@ launches must never re-purge" regression check) — not repeated here.
 | # | Prior state before delete | Provoke | Expected purge-gate behavior | Watch for |
 |---|---|---|---|---|
 | R1 | Never generated anything (truly clean) | Delete + reinstall | `hasIdentity=false, hadModuleState=false` → logs "first launch — Keychain already clean, nothing to purge", no session closed | No spurious purge session appears when there's genuinely nothing to purge |
-| R2 | Generated identity key only, never attested | Delete + reinstall | `hadIdentity=true, hadModuleState=false` → identity deleted, **`acknowledgeKeyInvalidation()` never called** (module state was already `.none`) | Confirms the module-state branch is correctly skipped when there's nothing there — no wasted regeneration-budget spend for a case that never touched the module at all |
+| R2 | Generated identity key only, never attested | Delete + reinstall | `hadIdentity=true, hadModuleState=false` → identity deleted, **`acknowledgeKeyInvalidation()` never called** (module state was already `.none`) | Confirms the module-state branch is correctly skipped when there's nothing there — no needless regeneration for a case that never touched the module at all |
 | R3 | Full successful registration (`isAttested=true`) | Delete + reinstall | `restore()` finds `isAttested=true` → `.attested(keyId:)` (not `.keyGenerated` — no spurious "key generated" log) → purge clears it | Next Attest after this should register as a **new** account — confirm a *second*, different `account_uuid` row appears in Postgres, not a reuse of the old one (matches the "no re-attestation" design decision) |
 | R4 | Attested with Apple, but `/register` never confirmed (killed mid-flow, or a genuine server rejection) | Delete + reinstall | Cached attestation *file* is gone (sandbox wiped) but `keyId` survives (Keychain) → `restore()` falls through to `.keyGenerated` (a real "orphaned key" reflection, not a new generation) → purge clears it | This is the exact scenario walked through live this session — confirms it's reliably reproducible and reliably recovered, not a one-off |
-| R5 | Any state that leaves `regenerationCount` at 2 | Delete + reinstall (pushing a 3rd `acknowledgeKeyInvalidation()` call) | Hits `exhausted` for real this time — should trigger the debug-reset fallback automatically, with the visible warning log from D1 | Confirms the fallback works from a genuinely-earned exhaustion, not just the contrived path used to first discover the bug |
+| R5 | Repeat R4 (orphaned-key reflection) five or more times back-to-back, as fast as reinstalling allows | Delete + reinstall each time | Each cycle regenerates cleanly — no local cap, no `exhausted`, no debug-reset fallback (that mechanism no longer exists, see `appattestkit-module-design.md` §8a) | Watch for Apple's *own* side effects now that nothing local throttles this: a rate-limit `DCError`, or a visibly slower `attestKey()` round-trip — either would be the Secure Enclave's own defense surfacing, not a bug in this code |
 | R6 | Any attested/pending state | Delete + reinstall **while `docker compose` is stopped entirely** | Purge gate should complete normally — `restore()` and `acknowledgeKeyInvalidation()` are both purely local, no network involved | Confirms purge success doesn't depend on server availability; only a *subsequent* Attest attempt should be affected by the server being down |
-| R7 | Repeat R3 or R4 three or more times back-to-back | Delete + reinstall each time | Each cycle's purge succeeds independently, `regenerationCount` climbs by exactly 1 each time until it caps at 3 | Regression check that nothing double-counts or under-counts the budget across multiple real cycles |
+| R7 | Repeat R3 or R4 three or more times back-to-back | Delete + reinstall each time | Each cycle's purge succeeds independently, every cycle regenerates with no cap | Regression check that the purge gate itself doesn't double-fire or skip across multiple real cycles — see R5 for what to actually watch for under heavy repetition |
 
 ---
 

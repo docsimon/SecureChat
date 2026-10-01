@@ -3,13 +3,12 @@
 //  AppAttestTestApp
 //
 //  Tracks real generateKey() calls this device has EVER made — deliberately
-//  Keychain-backed, not UserDefaults, for the same reason AppAttestKit's own
-//  LiveKeyStore.regenerationCount is Keychain-backed: the thing being
-//  measured (Apple's per-device lifetime key-generation budget) does NOT
-//  reset on reinstall, so storing the count somewhere that DOES reset on
-//  reinstall (UserDefaults) silently undercounts every time this harness
-//  gets reinstalled during testing — exactly the kind of thing this counter
-//  exists to prevent getting wrong.
+//  Keychain-backed, not UserDefaults, so reinstalling during testing doesn't
+//  silently reset the running total back to near-zero. This is a local
+//  heuristic only: Apple publishes no per-device lifetime generateKey() count
+//  to check it against (appattestkit-module-design.md §8a) — it's just a
+//  sanity-check total for whoever is running the checklist, not an
+//  authoritative limit, and nothing in AppAttestKit branches on it.
 //
 
 import Foundation

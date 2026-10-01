@@ -177,8 +177,8 @@ public enum AttestationError: Error {
 
 Keys stop working: Keychain cleared, device restored from backup, `DCError.invalidKey`. Two distinct discovery paths, handled differently — this distinction was missed in the first draft and only surfaced during real-device testing (see `appattest-smoke-checklist.md`):
 
-- **Discovered mid-attestation** — `attestKey` itself throws `.keyInvalid` during an active `ensureAttested()` call. Handled entirely inside the retry loop: discard the `keyId`, generate a fresh one, re-attest, bounded by the regeneration cap (§6).
-- **Discovered later, independently, via `sign()`** — the credential died after the app already believed it was attested (a reinstall is the common real-world cause). `sign()` deliberately never self-heals (§3: "keep this path thin — no state machine"), and `ensureAttested()`'s own persisted-flag check (it exists specifically so a healthy key isn't needlessly re-attested on every launch) would otherwise keep trusting the stale record forever. The app must explicitly call **`acknowledgeKeyInvalidation()`** on seeing `.keyInvalid` from `sign()` — this clears the persisted record and transitions to `.none`, drawing from the **same** regeneration cap as the mid-attestation path (one shared pool, not two, or the cap would be trivially bypassable).
+- **Discovered mid-attestation** — `attestKey` itself throws `.keyInvalid` during an active `ensureAttested()` call. Handled entirely inside the retry loop: discard the `keyId`, generate a fresh one, re-attest. Still bounded by `Policy.maxAttempts` (the whole call gives up after 5 attempts regardless of error kind) — no separate, longer-lived regeneration cap on top of that.
+- **Discovered later, independently, via `sign()`** — the credential died after the app already believed it was attested (a reinstall is the common real-world cause). `sign()` deliberately never self-heals (§3: "keep this path thin — no state machine"), and `ensureAttested()`'s own persisted-flag check (it exists specifically so a healthy key isn't needlessly re-attested on every launch) would otherwise keep trusting the stale record forever. The app must explicitly call **`acknowledgeKeyInvalidation()`** on seeing `.keyInvalid` from `sign()` — this clears the persisted record and transitions to `.none`, unconditionally (revised — an earlier revision bounded this by a local, Keychain-persisted regeneration cap shared with the mid-attestation path; removed, see §8a below).
 
 Per §8's resolution below: re-attesting here always means a fresh `/register` producing a **new account** — never a rebind of the old one via a special re-attestation endpoint.
 
@@ -206,11 +206,56 @@ This is a clean decision to reverse later — nothing here creates migration deb
 
 **How the wipe is actually triggered: proactively at launch, not just reactively.** An earlier version of this decision only wiped reactively — inside `sign()`'s failure handler, the moment the app actually tried to use a dead credential. That has a real UX cost: right after a reinstall, the UI (or the real app's internal state) keeps showing "attested" until something happens to fail, which is exactly the kind of stale-looking state this whole section exists to avoid. The app now also detects the reinstall proactively, at launch, using the standard pattern already noted in architecture doc §8's failure-paths table: a `UserDefaults` flag, which is wiped along with the rest of the sandbox container on delete (unlike Keychain), so its absence means either a genuine first-ever install or a reinstall. On first detecting this, before showing any state, the app purges whatever Keychain state survived from a previous install.
 
-⚠️ **This is the one piece of this decision where a bug is not just wrong but catastrophic.** If the "is this the first launch" check is ever inverted or otherwise wrong such that it fires on an *ordinary* launch instead of only the first one after install, it repeatedly spends the device's real, finite App Attest key-generation budget — exhausting it in days. Two things guard this specifically:
+⚠️ **This is the one piece of this decision where a bug is not just wrong but serious.** If the "is this the first launch" check is ever inverted or otherwise wrong such that it fires on an *ordinary* launch instead of only the first one after install, it repeatedly spends a real `generateKey()` call on every single launch, forever — wasteful at minimum, and the kind of repeated key-rotation behavior Apple's own fraud-risk scoring is designed to flag (see §8a). Two things guard this specifically:
 - The purge is conditional on something actually being there (`IdentityKeyStore.exists()` / `coordinator.currentState != .none`) — a genuine first-ever install must not be charged for a purge it didn't need.
 - The `UserDefaults` flag is set *after* the purge completes, not before, so a crash mid-purge retries (idempotent, safe) on the next launch rather than silently marking itself done and leaking a stale credential forever.
 
 The reactive `acknowledgeKeyInvalidation()` call from `sign()` remains in place as a safety net for invalidation that happens *without* a reinstall (e.g. a device restore, or Keychain cleared independently) — the launch-time check only catches the reinstall case.
+
+## 8a. Removed — the local regeneration cap
+
+**Decision: no cap on key regeneration, anywhere in this module.** An earlier
+revision enforced `Policy.maxKeyRegenerations` (3), persisted in Keychain via
+`regenerationCount`, surviving reinstall by design, shared between the
+mid-attestation retry path and `acknowledgeKeyInvalidation()`. Both
+`acknowledgeKeyInvalidation()` and the retry loop's `requiresNewKey` branch now
+regenerate unconditionally; `regenerationCount` no longer exists anywhere
+(removed from `AttestationKeyStore`, `LiveKeyStore`, and the test mocks).
+
+**Why it existed:** to defend against an assumed Apple-side "device lifetime
+key budget" — the fear being that a bug causing repeated misdetection of
+`.keyInvalid` could silently exhaust that budget with no warning, permanently
+breaking App Attest for that device. `maxAttempts` (§6, retry policy) already
+bounds any *single* `ensureAttested()` call; this was meant as a second,
+longer-lived backstop across calls and launches.
+
+**Why it was removed:** checked against what Apple actually documents (not
+verified when the cap was first added) — there is no published per-device
+lifetime count for `generateKey()`/`attestKey()`. What *is* documented: a
+per-second rate limit (burst speed, not a cumulative total) and a fraud/risk
+metric that key-rotation events (including reinstalls) feed into, retrievable
+via the receipt mechanism — a soft signal Apple itself evaluates, not a hard
+technical cutoff this module can usefully pre-empt. The Secure Enclave has
+its own abuse defenses; duplicating them locally, with an arbitrary and
+unverified number, was judged not this module's job. In practice the cap's
+only confirmed effect was false "exhausted" failures during ordinary
+reinstall-heavy *testing* — including, more than once, mid-session on the
+real device this module was being validated against — with no recovery path
+in a shipping build once hit (the debug-reset fallback that existed to work
+around this was `#if DEBUG`-only, by design). See `account-keys-reference.md`
+for the full research trail.
+
+**What still protects against a genuine runaway bug:** `Policy.maxAttempts`
+(unchanged, still 5) bounds any single `ensureAttested()` call regardless of
+error kind. A bug that caused `.keyInvalid` misdetection on *every single
+launch* would still call `generateKey()` repeatedly over time, uncapped — that
+risk is real and not eliminated, just no longer defended against by this
+module. If it ever needs a backstop again, it should be scoped **per
+installation** (e.g. `UserDefaults`, naturally reset by a reinstall — which is
+itself a legitimate, intentional fresh start, not suspicious behavior) rather
+than Keychain-persisted-forever, so a deliberate reinstall for testing (or by
+a real user) never collides with a guard meant for crash loops within one
+install.
 
 **Open for v2 — manual contact merge, not automatic recognition.** Since the identity key changes on every reinstall now, there is no way for a contact's app to *automatically* recognize a returning identity — the cryptographic thread is gone by construction, not just unbuilt. A v2 feature could let the *user* manually declare "this new contact is the same person as this existing one" and merge the records (preserving nickname/history, retiring the orphaned old entry). This is fundamentally a socially-verified action, not a cryptographically-verified one — the app can never prove the claim, only let the user assert it. Tracked as an open question in `architecture-decisions.md` §11.
 

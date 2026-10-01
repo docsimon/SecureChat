@@ -17,10 +17,17 @@ import Foundation
 ///
 /// Why an `actor` and not just `Sendable`: `ensureAttested()` is triggered from
 /// app launch, foreground, AND connectivity change, which can overlap. Two
-/// concurrent calls would mean two `generateKey()` calls, two orphaned keys, and
-/// a device lifetime key budget burned for nothing. `Sendable` is a data-race
-/// ANNOTATION, not mutual exclusion — it would not prevent this.
-/// See module doc §4.
+/// concurrent calls would mean two `generateKey()` calls and two orphaned keys
+/// for no reason. `Sendable` is a data-race ANNOTATION, not mutual exclusion —
+/// it would not prevent this. See module doc §4.
+///
+/// Regeneration is NOT capped here. Earlier revisions enforced a local,
+/// Keychain-persisted regeneration limit as a defensive measure against an
+/// undocumented Apple-side budget — reconsidered: Apple publishes no per-device
+/// generateKey() count, the Secure Enclave has its own abuse defenses this
+/// module has no business duplicating, and the cap's only measurable effect in
+/// practice was false "exhausted" failures during ordinary reinstall-heavy
+/// testing, with no production recovery path once hit. See account-keys-reference.md.
 public actor AttestationCoordinator: AssertionSigning {
 
     /// Internal and injectable so tests can run with zero backoff. Not public:
@@ -28,9 +35,6 @@ public actor AttestationCoordinator: AssertionSigning {
     /// build a competing retry loop alongside this one.
     struct Policy: Sendable {
         var maxAttempts: Int = 5
-        /// Persisted across launches. Bounds the ONE case where regenerating a
-        /// key is legitimate, so a crash-loop cannot exhaust the device budget.
-        var maxKeyRegenerations: Int = 3
         /// Exponential, capped at 60s. `Duration` is iOS 16+, available now
         /// that the floor is 17.
         var backoff: @Sendable (Int) -> Duration = { attempt in
@@ -119,8 +123,8 @@ public actor AttestationCoordinator: AssertionSigning {
         }
         // Order matters: check `attested` FIRST. A registered user must not be
         // sent back through the flow — attesting a one-shot key a second time
-        // fails with .invalidKey, which would consume a key regeneration and,
-        // repeated, lock the user out permanently.
+        // fails with .invalidKey, triggering a needless regeneration for a key
+        // that was never actually broken.
         if (try? store.loadIsAttested()) == true {
             transition(to: .attested(keyId: keyId))
         } else if let cached = try? store.loadAttestation() {
@@ -135,31 +139,16 @@ public actor AttestationCoordinator: AssertionSigning {
     #if DEBUG
     /// Harness only. Wipes persisted state so a full attestation can be re-run.
     ///
-    /// ⚠️ This does NOT give you unlimited test runs. Key generation is capped
-    /// per device per App ID for the device's lifetime, so every reset-and-retry
-    /// consumes part of a finite budget. Use the package's mock-based tests for
-    /// iteration; use this sparingly to confirm real-API behaviour.
+    /// ⚠️ Still spends a real `generateKey()` call on the next attestation —
+    /// nothing here makes Apple's side of this free, only this module's own
+    /// bookkeeping. Use the package's mock-based tests for iteration; use this
+    /// sparingly to confirm real-API behaviour.
     ///
     /// Compile-time gated, NOT a runtime flag — a runtime bypass that ships is a
     /// bypass that gets found. See architecture doc §8.
     public func debugReset() {
         try? store.clear()
         transition(to: .none)
-    }
-
-    /// Harness only. Resets `regenerationCount` back to zero — the ONE thing
-    /// `debugReset()` deliberately never touches (see `LiveKeyStore.clear()`'s
-    /// own doc comment) and the one thing that otherwise has NO reset path at
-    /// all, in any build. That's intentional in shipping code — the counter
-    /// exists specifically so a bug can't silently re-arm the device's real,
-    /// finite lifetime key budget — but it also means a test device that
-    /// legitimately cycles through `maxKeyRegenerations` during heavy testing
-    /// (confirmed to happen in practice, not hypothetical) gets permanently
-    /// wedged with no way back, in a build where nothing here ever touches
-    /// the real production budget anyway. This exists so that's recoverable
-    /// here without it being reachable in a shipping build.
-    public func debugResetRegenerationBudget() {
-        try? store.store(regenerationCount: 0)
     }
     #endif
 
@@ -186,23 +175,13 @@ public actor AttestationCoordinator: AssertionSigning {
     /// real bug worth surfacing, not silently papering over), so it's a
     /// judgment call for the caller, not encoded here.
     ///
-    /// Bounded by the same per-device regeneration cap as the retry loop's
-    /// own `.keyInvalid` handling — this does not open a second, uncapped path
-    /// to burn the device's lifetime key budget. Call it ONLY in direct
-    /// response to a genuine key-invalidation signal from `sign()`; calling it
-    /// speculatively spends from the same finite budget `ensureAttested()`
-    /// protects.
-    ///
-    /// - Returns: `true` if the coordinator was reset and the next
-    ///   `ensureAttested()` call will re-attest; `false` if the regeneration
-    ///   budget is exhausted (mirrors the `.exhausted` handling elsewhere).
-    @discardableResult
-    public func acknowledgeKeyInvalidation() -> Bool {
-        guard regenerateKeyIfBudgetAllows() else {
-            observer?.didFail(.exhausted, attempt: 0)
-            return false
-        }
-        return true
+    /// Not bounded by anything here — no local cap. Still only call this in
+    /// direct response to a genuine key-invalidation signal from `sign()`,
+    /// not speculatively: each call wipes state and spends a real
+    /// `generateKey()` on the next attestation, so calling it needlessly is
+    /// still wasteful even without an enforced cap.
+    public func acknowledgeKeyInvalidation() {
+        regenerateKey()
     }
 
     // MARK: AssertionSigning
@@ -249,15 +228,13 @@ public actor AttestationCoordinator: AssertionSigning {
             do {
                 return try await attemptRegistration(binding: binding)
             } catch let error as AttestationError where error.requiresNewKey {
-                // The ONLY branch where a new key is legitimate. Bounded, and the
-                // bound is persisted so a crash-loop cannot bypass it. Shared
-                // with acknowledgeKeyInvalidation() so both paths — this one
-                // (discovered mid-attestation) and that one (discovered later,
-                // via sign()) — draw from the same capped budget.
-                guard regenerateKeyIfBudgetAllows() else {
-                    observer?.didFail(.exhausted, attempt: attempt)
-                    throw AttestationError.exhausted
-                }
+                // The ONLY branch where a new key is legitimate — still bounded
+                // by maxAttempts below (the while loop), just no separate,
+                // longer-lived cap on top of it. Shared logic with
+                // acknowledgeKeyInvalidation() since both are "a key just died,
+                // get ready to make a new one," differing only in *when* that's
+                // discovered.
+                regenerateKey()
                 attempt += 1
                 observer?.didFail(error, attempt: attempt)
 
@@ -353,19 +330,12 @@ public actor AttestationCoordinator: AssertionSigning {
 
     // MARK: Helpers
 
-    /// Checks the persisted regeneration cap, and if there's budget left,
-    /// spends one unit of it: increments the counter, clears the stale
-    /// record, and transitions to `.none`. Shared by the retry loop's
-    /// `.keyInvalid` branch and `acknowledgeKeyInvalidation()` — both are
-    /// "a key just died, get ready to make a new one," they just differ in
-    /// *when* that gets discovered.
-    private func regenerateKeyIfBudgetAllows() -> Bool {
-        let used = (try? store.loadRegenerationCount()) ?? 0
-        guard used < policy.maxKeyRegenerations else { return false }
-        try? store.store(regenerationCount: used + 1)
+    /// Clears the dead key's record and transitions to `.none`, ready for a
+    /// fresh `generateKey()` on the next attempt. Shared by the retry loop's
+    /// `requiresNewKey` branch and `acknowledgeKeyInvalidation()`.
+    private func regenerateKey() {
         try? store.clear()
         transition(to: .none)
-        return true
     }
 
     private func transition(to newState: AttestationState) {

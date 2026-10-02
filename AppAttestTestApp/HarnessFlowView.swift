@@ -47,13 +47,20 @@ struct HarnessFlowView: View {
                         )
                         StepRow(
                             number: 2,
-                            title: "Attest",
-                            subtitle: "Attests with Apple, then registers with the Auth Server",
+                            title: "Attest (Apple)",
+                            subtitle: "Generates/reuses the App Attest key, stops at attestationPending",
                             state: attestState,
-                            action: { Task { await model.attest() } }
+                            action: { Task { await model.attestOnly() } }
                         )
                         StepRow(
                             number: 3,
+                            title: "Register (Auth Server)",
+                            subtitle: "Submits the cached attestation to /register — no Apple call",
+                            state: registerState,
+                            action: { Task { await model.registerOnly() } }
+                        )
+                        StepRow(
+                            number: 4,
                             title: "Sign Assertion",
                             subtitle: "Repeatable — every authenticated request does this",
                             state: signState,
@@ -179,6 +186,12 @@ struct HarnessFlowView: View {
     private var attestState: StepRow.State {
         if model.activeStep == .attest { return .inProgress }
         if !model.identityGenerated { return .locked }
+        return model.attestationCompleted ? .done : .available
+    }
+
+    private var registerState: StepRow.State {
+        if model.activeStep == .register { return .inProgress }
+        if !model.attestationCompleted { return .locked }
         return model.attested ? .done : .available
     }
 

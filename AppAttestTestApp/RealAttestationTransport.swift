@@ -17,9 +17,9 @@
 //  the server's verification library fixes that hash formula with no
 //  override seam, so the identity binding moved server-side instead (the
 //  challenge is issued bound to an identityPublicKey and checked back at
-//  /register). The `binding` closure passed to `ensureAttested` in
-//  HarnessFlowModel.attest() must match this — it's the app's
-//  responsibility, not this transport's, but the two have to agree.
+//  /register). The `binding` closure passed to `ensureAttested`/`attestOnly`
+//  in HarnessFlowModel.attestOnly()/registerOnly() must match this — it's
+//  the app's responsibility, not this transport's, but the two have to agree.
 //
 
 import Foundation

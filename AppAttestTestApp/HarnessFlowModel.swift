@@ -26,23 +26,35 @@ import AppAttestKit
 
 @Observable @MainActor
 final class HarnessFlowModel {
-    enum ActiveStep { case none, identity, attest, sign }
+    enum ActiveStep { case none, identity, attest, register, sign }
 
     private(set) var identityGenerated = false
+    /// True once Apple's `attestKey()` has succeeded and `.attestationPending`
+    /// is persisted — independent of `attested`, which only flips once the
+    /// Auth Server has also confirmed `/register`. Split out specifically so
+    /// "Attest (Apple)" and "Register (Auth server)" can be driven as two
+    /// separate, manually-triggered steps (see `attestOnly()`/`registerOnly()`)
+    /// instead of one atomic call — needed to test network/server
+    /// interruptions between the two with full manual control over timing,
+    /// rather than racing a window a few hundred ms wide.
+    private(set) var attestationCompleted = false
     private(set) var attested = false
     private(set) var activeStep: ActiveStep = .none
     private(set) var identityPublicKeyPrefix: String?
 
-    /// Guards `RealAttemptCounter` against over-counting within a single
-    /// attest() call. `transition()` fires the observer unconditionally, even
-    /// for a no-op re-transition to the SAME .keyGenerated(keyId:) — which
-    /// happens on every retry-loop re-entry into attemptRegistration() before
-    /// state ever advances past .keyGenerated (e.g. /challenge failing
-    /// repeatedly). Confirmed on a real device: 2 network retries before a
-    /// working attempt logged 3 "key generated" events for what was really
-    /// ONE generateKey() call. Reset at the start of each attest(); only a
-    /// genuinely NEW keyId (never a DIFFERENT one — same keyId means "still
-    /// the same generation, just observed again") increments the counter.
+    /// Guards BOTH the "App Attest key generated" log line and
+    /// `RealAttemptCounter` against duplication within a single attest()
+    /// call. `transition()` fires the observer unconditionally, even for a
+    /// no-op re-transition to the SAME .keyGenerated(keyId:) — which happens
+    /// on every retry-loop re-entry into attemptRegistration() before state
+    /// ever advances past .keyGenerated (e.g. /challenge failing
+    /// repeatedly). Confirmed on a real device twice now: first 2 network
+    /// retries before a working attempt logged 3 "key generated" events for
+    /// one real generateKey() call; later, a 5-attempt cellular-only
+    /// exhaustion (B3) logged the same key as "generated" 5 times. Reset at
+    /// the start of each attest(); only a genuinely NEW keyId (never a
+    /// DIFFERENT one — same keyId means "still the same generation, just
+    /// observed again") logs and increments the counter.
     private var lastCountedKeyId: String?
 
     /// Local heuristic only — Apple exposes no remaining-budget API
@@ -63,6 +75,7 @@ final class HarnessFlowModel {
 
     var stateLabel: String {
         if attested { return "attested" }
+        if attestationCompleted { return "attestationPending (awaiting registration)" }
         if identityGenerated { return "identity ready (App Attest not yet requested)" }
         return "none"
     }
@@ -119,6 +132,11 @@ final class HarnessFlowModel {
         await coordinator.restore()
         let state = await coordinator.currentState
         attested = state.isAttested
+        if case .attestationPending = state {
+            attestationCompleted = true
+        } else {
+            attestationCompleted = state.isAttested
+        }
         // Structured, not just embedded in the summary text — HarnessSession
         // needs to reliably tell "restored into an already-attested state"
         // apart from "restored into something else," and matching against
@@ -204,9 +222,12 @@ final class HarnessFlowModel {
         }
     }
 
-    /// The one real atomic call — see the file header for why this can't be
-    /// split any further than "identity, then attest."
-    func attest() async {
+    /// Phase 1 of 2 — Apple only. Stops at `.attestationPending`, deliberately
+    /// never calls `/register` (see `AttestationCoordinator.attestOnly()`).
+    /// Split from registration specifically so a tester can control
+    /// network/server conditions for as long as they want *between* the two
+    /// phases, instead of racing a timing window a few hundred ms wide.
+    func attestOnly() async {
         guard activeStep == .none else { return }
         activeStep = .attest
         lastCountedKeyId = nil
@@ -223,7 +244,7 @@ final class HarnessFlowModel {
             return
         }
 
-        log(.attestationStarted, summary: "attestation flow started")
+        log(.attestationStarted, summary: "attestation flow started (Apple only)")
 
         let coordinator = resolveCoordinator()
         do {
@@ -235,6 +256,50 @@ final class HarnessFlowModel {
             // moved server-side instead (the challenge is issued bound to an
             // identityPublicKey and checked back at /register — see
             // RealAttestationTransport.swift and account-keys-reference.md).
+            #if DEBUG
+            let result = try await coordinator.attestOnly { challenge in
+                Data(SHA256.hash(data: challenge))
+            }
+            if case .attestationPending = result {
+                attestationCompleted = true
+            } else if result.isAttested {
+                // Already fully attested from a prior run — nothing new to do.
+                attested = true
+                attestationCompleted = true
+            } else {
+                log(.attestationFailed, summary: "ended in state: \(result.label)", isError: true)
+            }
+            #else
+            log(.attestationFailed, summary: "attestOnly is DEBUG-only", isError: true)
+            #endif
+        } catch let error as AttestationError {
+            log(.attestationFailed, summary: error.diagnosticName, isError: true)
+        } catch {
+            log(.attestationFailed, summary: "\(error)", isError: true)
+        }
+    }
+
+    /// Phase 2 of 2 — Auth Server only. Requires `attestOnly()` to have
+    /// already succeeded: `ensureAttested()` resumes from `.attestationPending`
+    /// straight to `submit()` when there's something pending, but if nothing
+    /// is pending yet it would silently run the WHOLE flow (Apple included) —
+    /// guarded against here so this button only ever does the Auth Server
+    /// half, matching what it's labeled.
+    func registerOnly() async {
+        guard activeStep == .none else { return }
+        guard attestationCompleted, !attested else {
+            log(.attestationFailed, summary: "nothing pending — run Attest (Apple) first", isError: true)
+            return
+        }
+        activeStep = .register
+        lastCountedKeyId = nil
+        defer { activeStep = .none }
+
+        let coordinator = resolveCoordinator()
+        do {
+            // Same binding formula as attestOnly() — see its comment. Only
+            // actually used here if somehow nothing was pending (defensive;
+            // the guard above should prevent reaching this with .none/.keyGenerated).
             let result = try await coordinator.ensureAttested { challenge in
                 Data(SHA256.hash(data: challenge))
             }
@@ -315,6 +380,7 @@ final class HarnessFlowModel {
                 identityPublicKeyPrefix = nil
                 await coordinator.acknowledgeKeyInvalidation()
                 identityGenerated = false
+                attestationCompleted = false
                 attested = false
                 log(.identityKeyDeleted,
                     summary: "key invalidation acknowledged — identity and module state both cleared (v1 policy), next Generate/Attest starts fully fresh")
@@ -333,6 +399,7 @@ final class HarnessFlowModel {
             await coordinator.debugReset()
         }
         RegisteredAccountStore.current = nil
+        attestationCompleted = false
         attested = false
         log(.moduleReset, summary: "module state cleared — identity key kept, matches Option A. Next Attest spends a real key generation.")
         startNewSession()
@@ -345,6 +412,7 @@ final class HarnessFlowModel {
         IdentityKeyStore.delete()
         RegisteredAccountStore.current = nil
         identityGenerated = false
+        attestationCompleted = false
         attested = false
         identityPublicKeyPrefix = nil
         #if DEBUG
@@ -409,14 +477,31 @@ final class HarnessFlowModel {
         }
     }
 
-    /// NEVER interpolate a state's associated keyId directly — `.label` is
-    /// deliberately the safe, keyId-omitting summary (architecture doc §10).
+    /// `.label` (used for the summary line and `stateLabel`) is deliberately
+    /// keyId-omitting. The ONE deliberate exception is the `.keyGenerated`
+    /// case below, which puts the real keyId in a structured DetailField —
+    /// needed to visually confirm the SAME key survives a retry loop
+    /// (confirmed necessary on a real device: B3's cellular-only run showed
+    /// 5 "key generated" log lines for one real generateKey() call, and
+    /// proving they shared a keyId was the only way to confirm it). Safe
+    /// specifically because this history is in-memory only, same as the raw
+    /// CBOR hex below (which embeds the device's real App Attest public
+    /// key) — never persisted, synced, or sent to a crash reporter. Do not
+    /// extend this exception to anything that outlives this in-memory list.
     private func recordTransition(_ newState: AttestationState) {
         switch newState {
         case .none:
             break
         case .keyGenerated(let keyId):
-            log(.attestationStepKeyGenerated, summary: "App Attest key generated — no network involved")
+            // Only log/count it once per DISTINCT keyId — see
+            // lastCountedKeyId's doc comment for why a retry loop re-enters
+            // attemptRegistration() and reflects the same .keyGenerated
+            // state multiple times with no new generateKey() call in
+            // between. The keyId itself is in the log detail specifically
+            // so this is independently verifiable, not just asserted.
+            guard keyId != lastCountedKeyId else { break }
+            log(.attestationStepKeyGenerated, summary: "App Attest key generated — no network involved",
+                detail: [DetailField(label: "Key ID", value: keyId)])
             // Only count transitions observed during an ACTIVE attest() call.
             // restore() can also transition into .keyGenerated merely by
             // reading an existing keyId back off disk (no real generateKey()
@@ -424,12 +509,7 @@ final class HarnessFlowModel {
             // every launch, plus again inside the first-launch purge gate.
             // Counting those would inflate this heuristic on every ordinary
             // launch that happens to find a mid-flow-crashed state.
-            //
-            // AND: only count it once per DISTINCT keyId within this call —
-            // see lastCountedKeyId's doc comment for why a retry loop can
-            // reflect the same .keyGenerated state multiple times with no
-            // new generateKey() call in between.
-            if activeStep == .attest, keyId != lastCountedKeyId {
+            if activeStep == .attest {
                 lastCountedKeyId = keyId
                 RealAttemptCounter.increment()
             }
@@ -495,10 +575,12 @@ final class HarnessFlowModel {
     }
 }
 
-/// Diagnostics only — NEVER logs a keyId, which is a persistent device
-/// identifier (architecture doc §10). AttestationObserver's methods are
-/// synchronous by design (the coordinator calls them in-line from actor
-/// context), so this hops to MainActor explicitly rather than assuming one.
+/// Diagnostics only. Mostly keyId-omitting — see `recordTransition`'s doc
+/// comment for the one deliberate, in-memory-only exception. keyId is a
+/// persistent device identifier and this caution is the default; it's not
+/// blanket-true of everything downstream of this observer. AttestationObserver's
+/// methods are synchronous by design (the coordinator calls them in-line from
+/// actor context), so this hops to MainActor explicitly rather than assuming one.
 struct HarnessObserver: AttestationObserver {
     let onTransition: @Sendable (AttestationState) -> Void
     let onFailure: @Sendable (AttestationError, Int) -> Void

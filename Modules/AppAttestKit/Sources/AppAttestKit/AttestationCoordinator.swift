@@ -261,6 +261,19 @@ public actor AttestationCoordinator: AssertionSigning {
             return try await submit(keyId: keyId, attestation: attestation, challenge: challenge)
         }
 
+        let pending = try await performAttestation(binding: binding)
+        guard case .attestationPending(let keyId, let attestation, let challenge) = pending else {
+            return pending
+        }
+        return try await submit(keyId: keyId, attestation: attestation, challenge: challenge)
+    }
+
+    /// STEPS 3–8: everything up to and including the Apple round trip and
+    /// persisting `.attestationPending` — but NOT `submit()`. Shared by
+    /// `attemptRegistration()` (which always continues straight on to
+    /// `submit()`, production's atomic one-call behavior, unchanged) and the
+    /// harness-only `attestOnly()` below (which deliberately stops here).
+    private func performAttestation(binding: @Sendable @escaping (Data) throws -> Data) async throws -> AttestationState {
         // STEP 3 — load before generate, ALWAYS.
         let keyId: String
         if let existing = try store.loadKeyId() {
@@ -303,9 +316,64 @@ public actor AttestationCoordinator: AssertionSigning {
         transition(to: .attestationPending(keyId: keyId,
                                            attestation: attestation,
                                            challenge: challenge))
-
-        return try await submit(keyId: keyId, attestation: attestation, challenge: challenge)
+        return state
     }
+
+    #if DEBUG
+    /// Harness only. Runs STEPS 3–8 — generate-key-if-needed through the
+    /// Apple round trip and persisting `.attestationPending` — and stops
+    /// there, deliberately never calling `/register`. Lets a manual tester
+    /// control network/server conditions for as long as they want between
+    /// the Apple step and the registration step, instead of racing a
+    /// timing window. Call `ensureAttested()` afterward (same binding) to
+    /// run just the registration step: it detects `.attestationPending` and
+    /// jumps straight to `submit()`, skipping Apple entirely — the same
+    /// resume path crash recovery already relies on, just triggered on
+    /// purpose instead of by a relaunch.
+    ///
+    /// Single attempt, no internal retry loop — this exists for manual,
+    /// one-step-at-a-time control, not automated resilience (that's what
+    /// `ensureAttested()` is for). Idempotent: an already-attested or
+    /// already-pending state is returned as-is, no new work done.
+    ///
+    /// Compile-time gated, NOT a runtime flag — a runtime bypass that ships
+    /// is a bypass that gets found. See architecture doc §8.
+    public func attestOnly(
+        binding: @Sendable @escaping (Data) throws -> Data
+    ) async throws -> AttestationState {
+        if let existing = inFlight { return try await existing.value }
+        let task = Task { try await runAttestOnly(binding: binding) }
+        inFlight = task
+        defer { inFlight = nil }
+        return try await task.value
+    }
+
+    private func runAttestOnly(binding: @Sendable @escaping (Data) throws -> Data) async throws -> AttestationState {
+        if state.isAttested { return state }
+        if (try? store.loadIsAttested()) == true,
+           let keyId = (try? store.loadKeyId()) ?? nil {
+            transition(to: .attested(keyId: keyId))
+            return state
+        }
+        if case .attestationPending = state { return state }
+        guard service.isSupported else {
+            let error = AttestationError.unsupported
+            observer?.didFail(error, attempt: 0)
+            transition(to: .unsupported(error))
+            return state
+        }
+        do {
+            return try await performAttestation(binding: binding)
+        } catch let error as AttestationError where error.requiresNewKey {
+            regenerateKey()
+            observer?.didFail(error, attempt: 0)
+            throw error
+        } catch let error as AttestationError {
+            observer?.didFail(error, attempt: 0)
+            throw error
+        }
+    }
+    #endif
 
     private func submit(keyId: String, attestation: Data,
                         challenge: Data) async throws -> AttestationState {

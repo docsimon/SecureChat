@@ -41,6 +41,14 @@ public actor AttestationCoordinator: AssertionSigning {
             .seconds(min(pow(2.0, Double(attempt)), 60))
         }
 
+        /// Deadline for a single `DCAppAttestService` call. Those calls have
+        /// no timeout of their own: confirmed on a real device, `attestKey`
+        /// started with no connectivity never returned — not after ten
+        /// minutes, not when the network came back — and a registration
+        /// waiting on it hung until the app was killed. Normal latency is a
+        /// few seconds, so 30s is generous without being indefinite.
+        var appleCallTimeout: Duration = .seconds(30)
+
         static let `default` = Policy()
         /// Tests only — real sleeps would make the suite take minutes.
         static let immediate = Policy(backoff: { _ in .zero })
@@ -54,6 +62,16 @@ public actor AttestationCoordinator: AssertionSigning {
 
     private var state: AttestationState = .none
     private var inFlight: Task<AttestationState, Error>?
+
+    /// The challenge fetched for the key currently being attested, kept for
+    /// the rest of ONE `ensureAttested()` call. Apple's guidance for a failed
+    /// `attestKey` is to retry with the same key AND the same client data
+    /// hash (it preserves the device's risk metric) — so a retry must not go
+    /// back to the server for a new challenge. Dropped when the key is
+    /// attested or discarded, and at the start of every call: the challenge
+    /// has a server-side lifetime this module knows nothing about, and one
+    /// call is short enough not to outlive it.
+    private var heldChallenge: (keyId: String, challenge: Data)?
 
     // MARK: Initializers
     //
@@ -175,10 +193,9 @@ public actor AttestationCoordinator: AssertionSigning {
         guard case .attested(let keyId) = state else {
             throw AttestationError.notAttested
         }
-        do {
-            return try await service.generateAssertion(keyId, clientDataHash: payload)
-        } catch {
-            throw AttestationError.from(error)
+        let service = self.service
+        return try await callApple {
+            try await service.generateAssertion(keyId, clientDataHash: payload)
         }
     }
 
@@ -192,6 +209,7 @@ public actor AttestationCoordinator: AssertionSigning {
         // attestation is cached but not yet confirmed by the server.
         if case .none = state { transition(to: persistedState()) }
         if state.isAttested { return state }
+        heldChallenge = nil
 
         guard service.isSupported else {
             let error = AttestationError.unsupported
@@ -259,8 +277,8 @@ public actor AttestationCoordinator: AssertionSigning {
         if let existing = try store.loadKeyId() {
             keyId = existing
         } else {
-            do { keyId = try await service.generateKey() }
-            catch { throw AttestationError.from(error) }
+            let service = self.service
+            keyId = try await callApple { try await service.generateKey() }
             // STEP 4 — persist BEFORE attesting, so a crash cannot orphan the key.
             try store.store(keyId: keyId)
         }
@@ -268,15 +286,22 @@ public actor AttestationCoordinator: AssertionSigning {
 
         // STEP 5 — challenge. ~15 min TTL, longer than session challenges,
         // because the attestation we cache below is bound to it.
+        // Fetched once per key per call: a retry after a failed attestKey
+        // reuses it (see `heldChallenge`).
         let challenge: Data
-        do {
-            challenge = try await transport.fetchChallenge()
-        } catch let error as AttestationError {
-            // Pass through unchanged. Coercing everything to .networkUnavailable
-            // would turn a terminal .serverRejected into an infinite retry loop.
-            throw error
-        } catch {
-            throw AttestationError.networkUnavailable
+        if let held = heldChallenge, held.keyId == keyId {
+            challenge = held.challenge
+        } else {
+            do {
+                challenge = try await transport.fetchChallenge()
+            } catch let error as AttestationError {
+                // Pass through unchanged. Coercing everything to .networkUnavailable
+                // would turn a terminal .serverRejected into an infinite retry loop.
+                throw error
+            } catch {
+                throw AttestationError.networkUnavailable
+            }
+            heldChallenge = (keyId, challenge)
         }
 
         // STEP 6 — the APP builds the binding. The module carries an opaque
@@ -284,12 +309,14 @@ public actor AttestationCoordinator: AssertionSigning {
         let clientDataHash = try binding(challenge)
 
         // STEP 7 — ONE-SHOT. After this succeeds the key is assertion-only.
-        let attestation: Data
-        do { attestation = try await service.attestKey(keyId, clientDataHash: clientDataHash) }
-        catch { throw AttestationError.from(error) }
+        let service = self.service
+        let attestation = try await callApple {
+            try await service.attestKey(keyId, clientDataHash: clientDataHash)
+        }
 
         // STEP 8 — persist IMMEDIATELY, before any network call.
         try store.store(attestation: attestation, challenge: challenge)
+        heldChallenge = nil
         transition(to: .attestationPending(keyId: keyId,
                                            attestation: attestation,
                                            challenge: challenge))
@@ -328,8 +355,53 @@ public actor AttestationCoordinator: AssertionSigning {
     /// fresh `generateKey()` on the next attempt. Shared by the retry loop's
     /// `requiresNewKey` branch and `acknowledgeKeyInvalidation()`.
     private func regenerateKey() {
+        heldChallenge = nil
         try? store.clear()
         transition(to: .none)
+    }
+
+    /// Runs one `DCAppAttestService` call under `Policy.appleCallTimeout`,
+    /// mapping its errors to `AttestationError`.
+    ///
+    /// The call itself cannot be cancelled or timed out — so it runs in its
+    /// own task and this method simply stops WAITING for it, on whichever
+    /// comes first: its result, the deadline (`.retryable("timedOut")`), or
+    /// cancellation of the caller (`CancellationError`). The last one is what
+    /// lets `acknowledgeKeyInvalidation()` get past a flow that is stuck
+    /// inside Apple's call instead of hanging behind it.
+    ///
+    /// A call abandoned this way may still complete later; its result is
+    /// dropped. Confirmed on a real device that an abandoned `attestKey`
+    /// does not consume the key — the next attempt attested it normally.
+    private func callApple<T: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let (results, continuation) = AsyncThrowingStream<T, Error>.makeStream()
+        let work = Task {
+            do {
+                continuation.yield(try await operation())
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        let timeout = policy.appleCallTimeout
+        let deadline = Task {
+            try await Task.sleep(for: timeout)
+            continuation.finish(throwing: AttestationError.retryable("timedOut"))
+        }
+        defer {
+            work.cancel()
+            deadline.cancel()
+        }
+        do {
+            for try await value in results { return value }
+        } catch {
+            throw AttestationError.from(error)
+        }
+        // The stream ended with neither a value nor an error: the task
+        // waiting on it was cancelled.
+        throw CancellationError()
     }
 
     /// What the persisted data alone says the state is. Shared by `restore()`

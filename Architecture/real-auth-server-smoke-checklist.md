@@ -79,8 +79,8 @@ The expected outcome of every case is in `attestation-error-state-table.md`;
 the row numbers below refer to it. Wherever the tables in this file say
 "Attest", read "Register".
 
-Apple-side failures cannot be injected. To make `attestKey` fail for real:
-/challenge → *Pause after the response*, enable airplane mode, Continue.
+Apple-side failures cannot be injected. The one that can be provoked is
+`attestKey` with no connectivity, which hangs rather than fails — see F10.
 
 ---
 
@@ -164,7 +164,7 @@ What every case is checking, in order of importance:
 | F7 | /register → Send, then lose the response | Register; mid-backoff set /register → Pass through | Same account UUID on the retry, one row in Postgres (row 13) |
 | F8 | /register → Fail: challenge expired (fires once, then resets itself to Pass through) | Register | Old key discarded, **new** key and CBOR, registers. Real attempts +2 (row 14). Real-server variant: pause before /register, `DEL` the challenge key in Redis, Continue |
 | F9 | /register → Fail: HTTP 400 (rejected) | Register, then Register again | Each tap: one rejection, no retry, state stays `attestationPending`, no new key (row 15). Clear with Reset module state |
-| F10 | /challenge → Pause after the response | Register → pause → airplane mode → Continue; later airplane mode off | `attestKey` fails for real → `retryable`, same key; recovers when the network is back (row 7) |
+| F10 | /challenge → Pause after the response | Register → pause → airplane mode **and Wi-Fi off** (airplane mode alone can leave Wi-Fi connected) → Continue | `attestKey` does not fail — it hangs. Each attempt is abandoned after 30 s as `retryable` "timedOut", same key, **no further `/challenge`**; `exhausted` after about 3 min. State `keyGenerated`. Back online, Register attests the same key (row 7a) |
 | F11 | /register → Pause before sending | Register → pause → Danger zone → Reset module state | "ensureAttested() cancelled by a reset", state `none`, nothing sent to `/register`, no new key generated behind your back (row 20) |
 | F12 | all Pass through | Register, then Sign Assertion | Happy path: `POST /session` 200 |
 

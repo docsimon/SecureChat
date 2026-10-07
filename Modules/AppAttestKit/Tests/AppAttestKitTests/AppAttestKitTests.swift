@@ -212,7 +212,7 @@ struct RetryPolicyTests {
 
     @Test("A retryable attestKey failure retries the SAME keyId")
     func retryableFailureRetriesSameKey() async throws {
-        let (coordinator, service, _, _, observer) = makeCoordinator(
+        let (coordinator, service, _, transport, observer) = makeCoordinator(
             attestKeyResults: [
                 .failure(AttestationError.retryable("serverUnavailable")),
                 .failure(AttestationError.retryable("serverUnavailable")),
@@ -226,6 +226,10 @@ struct RetryPolicyTests {
         #expect(await service.generateKeyCallCount == 1)
         #expect(observer.failures.count == 2)
         #expect(observer.failures.allSatisfy { $0.error == .retryable("serverUnavailable") })
+        // Apple's guidance: retry with the same key AND the same client data
+        // hash — so the challenge is fetched once, not once per attempt.
+        #expect(await transport.fetchChallengeCallCount == 1)
+        #expect(await service.attestedHashes == [testChallenge, testChallenge, testChallenge])
         // Each retry re-enters the flow at the same `.keyGenerated` state; the
         // observer must see that state once, not once per attempt.
         #expect(observer.transitions.filter { $0 == .keyGenerated(keyId: testKeyId) }.count == 1)
@@ -262,7 +266,7 @@ struct RetryPolicyTests {
     @Test("keyInvalid regenerates with a fresh key, not the dead one")
     func keyInvalidRegeneratesWithFreshKey() async throws {
         let store = InMemoryKeyStore()
-        let (coordinator, service, _, _, _) = makeCoordinator(
+        let (coordinator, service, _, transport, _) = makeCoordinator(
             generateKeyResults: [.success("key-1"), .success("key-2")],
             attestKeyResults: [.failure(AttestationError.keyInvalid), .success(testAttestation)],
             keyStore: store
@@ -273,6 +277,9 @@ struct RetryPolicyTests {
         #expect(final == .attested(keyId: "key-2"))
         #expect(await service.generateKeyCallCount == 2)
         #expect(await service.issuedKeyIds == ["key-1", "key-2"])
+        // A new key starts over: the challenge held for the dead key is not
+        // carried across to it.
+        #expect(await transport.fetchChallengeCallCount == 2)
     }
 
     @Test("A persistent keyInvalid failure still eventually exhausts via maxAttempts — no separate regeneration cap needed")
@@ -405,6 +412,82 @@ struct SubmitFailureTests {
         #expect(await transport.submittedRequests.count == 2)
         #expect(await service.attestKeyCallCount == 0)
         #expect(await service.generateKeyCallCount == 0)
+    }
+}
+
+// MARK: - Apple calls that never return
+//
+// Confirmed on a real device: `attestKey` started offline never called back.
+// The coordinator must stop waiting by itself, and must stay resettable.
+
+@Suite("DCAppAttestService calls that hang")
+struct HangingAppleCallTests {
+
+    @Test("A hung attestKey times out and is retried with the same key and challenge",
+          .timeLimit(.minutes(1)))
+    func hungAttestKeyTimesOutAndRetries() async throws {
+        let (coordinator, service, _, transport, observer) = makeCoordinator(
+            policy: .init(backoff: { _ in .zero }, appleCallTimeout: .milliseconds(50))
+        )
+        await service.hangNextAttestKeyCalls(1)
+
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+
+        #expect(final == .attested(keyId: testKeyId))
+        #expect(observer.failures.first?.error == .retryable("timedOut"))
+        #expect(await service.generateKeyCallCount == 1)
+        #expect(await service.attestKeyCallCount == 2)
+        #expect(await transport.fetchChallengeCallCount == 1)
+    }
+
+    @Test("An attestKey that hangs on every attempt ends in exhausted, not a hang",
+          .timeLimit(.minutes(1)))
+    func alwaysHungAttestKeyExhausts() async throws {
+        let (coordinator, service, store, _, _) = makeCoordinator(
+            policy: .init(backoff: { _ in .zero }, appleCallTimeout: .milliseconds(20))
+        )
+        await service.hangNextAttestKeyCalls(100)
+
+        await #expect(throws: AttestationError.exhausted) {
+            try await coordinator.ensureAttested(binding: identityBinding)
+        }
+        // Same key throughout, still there for the next call.
+        #expect(await service.generateKeyCallCount == 1)
+        #expect(try store.loadKeyId() == testKeyId)
+        #expect(await coordinator.currentState == .keyGenerated(keyId: testKeyId))
+    }
+
+    @Test("acknowledgeKeyInvalidation() gets past a flow stuck inside attestKey",
+          .timeLimit(.minutes(1)))
+    func resetIsNotBlockedByHungAttestKey() async throws {
+        // An hour's deadline: only cancellation can end this wait.
+        let (coordinator, service, store, _, _) = makeCoordinator(
+            policy: .init(appleCallTimeout: .seconds(3600))
+        )
+        await service.hangNextAttestKeyCalls(1)
+        let flow = Task { try await coordinator.ensureAttested(binding: identityBinding) }
+        while await service.attestKeyCallCount == 0 { await Task.yield() }
+
+        await coordinator.acknowledgeKeyInvalidation()
+
+        await #expect(throws: CancellationError.self) { try await flow.value }
+        #expect(await coordinator.currentState == .none)
+        #expect(try store.loadKeyId() == nil)
+    }
+
+    @Test("A hung generateAssertion makes sign() fail instead of hanging", .timeLimit(.minutes(1)))
+    func hungSignTimesOut() async throws {
+        let (coordinator, service, _, _, _) = makeCoordinator(
+            policy: .init(backoff: { _ in .zero }, appleCallTimeout: .milliseconds(50))
+        )
+        _ = try await coordinator.ensureAttested(binding: identityBinding)
+        await service.hangNextGenerateAssertionCalls(1)
+
+        await #expect(throws: AttestationError.retryable("timedOut")) {
+            try await coordinator.sign(Data([0xFF]))
+        }
+        // State untouched — the next sign() just works.
+        #expect(try await coordinator.sign(Data([0xFF])) == testAssertion)
     }
 }
 

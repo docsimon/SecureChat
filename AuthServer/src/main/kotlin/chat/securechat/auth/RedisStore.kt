@@ -25,7 +25,8 @@ private fun randomBytes(count: Int): ByteArray = ByteArray(count).also(secureRan
  */
 class RegistrationChallengeStore(private val redis: JedisPooled) {
     companion object {
-        private val TTL: Duration = Duration.ofMinutes(15)
+        /** Not private: AppAttestVerification derives the attestation receipt's max age from it. */
+        val TTL: Duration = Duration.ofMinutes(15)
         private const val KEY_PREFIX = "challenge:register:"
     }
 

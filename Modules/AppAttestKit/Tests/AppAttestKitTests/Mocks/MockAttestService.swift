@@ -55,13 +55,33 @@ actor MockAttestService: AttestServicing {
         return keyId
     }
 
+    /// The next N calls never return — like the real `attestKey` started
+    /// with no connectivity. Deliberately NOT a cancellable sleep: the real
+    /// call ignores cancellation too, and the coordinator must cope with that.
+    private var attestKeyHangsRemaining = 0
+    private var generateAssertionHangsRemaining = 0
+    func hangNextAttestKeyCalls(_ count: Int) { attestKeyHangsRemaining = count }
+    func hangNextGenerateAssertionCalls(_ count: Int) { generateAssertionHangsRemaining = count }
+
+    /// Every clientDataHash `attestKey` was called with, in order.
+    private(set) var attestedHashes: [Data] = []
+
     func attestKey(_ keyId: String, clientDataHash: Data) async throws -> Data {
         attestKeyCallCount += 1
+        attestedHashes.append(clientDataHash)
+        if attestKeyHangsRemaining > 0 {
+            attestKeyHangsRemaining -= 1
+            await withUnsafeContinuation { (_: UnsafeContinuation<Void, Never>) in }
+        }
         return try consume(&attestKeyResults)
     }
 
     func generateAssertion(_ keyId: String, clientDataHash: Data) async throws -> Data {
         generateAssertionCallCount += 1
+        if generateAssertionHangsRemaining > 0 {
+            generateAssertionHangsRemaining -= 1
+            await withUnsafeContinuation { (_: UnsafeContinuation<Void, Never>) in }
+        }
         return try consume(&generateAssertionResults)
     }
 

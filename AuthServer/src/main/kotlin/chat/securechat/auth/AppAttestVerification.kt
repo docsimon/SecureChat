@@ -8,6 +8,7 @@ import ch.veehait.devicecheck.appattest.attestation.AttestationValidator
 import ch.veehait.devicecheck.appattest.attestation.ValidatedAttestation
 import ch.veehait.devicecheck.appattest.common.App
 import java.security.interfaces.ECPublicKey
+import java.time.Duration
 
 /**
  * Thin wrapper around `devicecheck-appattest`. Deliberately does not touch
@@ -25,7 +26,24 @@ class AppAttestVerification(config: Config) {
         appleAppAttestEnvironment = config.appAttestEnvironment,
     )
 
-    private val attestationValidator: AttestationValidator = appleAppAttest.createAttestationValidator()
+    // The receipt embedded in an attestation carries its creation time, and
+    // the library rejects it once older than `maxAge` — 5 minutes by default.
+    // That default silently cut the resume window to a third of what the
+    // rest of the design assumes: the client caches an attestation and may
+    // resubmit it for as long as its challenge lives (15 minutes), but
+    // anything submitted after minute 5 came back
+    // `attestation_invalid:InvalidReceipt` (found on a real device). Tied to
+    // the challenge TTL instead, plus a margin, so there is ONE clock: an
+    // attestation that is too old always fails the challenge check in
+    // Routes.kt first, which the client already recovers from by itself.
+    // Freshness is still enforced — by the single-use challenge the
+    // attestation is cryptographically bound to. Every other receipt check
+    // (signature chain, app identity, attested public key) is unchanged.
+    private val attestationValidator: AttestationValidator = appleAppAttest.createAttestationValidator(
+        receiptValidator = appleAppAttest.createReceiptValidator(
+            maxAge = ATTESTATION_RECEIPT_MAX_AGE,
+        ),
+    )
 
     private val assertionValidator: AssertionValidator = appleAppAttest.createAssertionValidator(
         assertionChallengeValidator = object : AssertionChallengeValidator {
@@ -57,6 +75,10 @@ class AppAttestVerification(config: Config) {
             ): Boolean = true
         },
     )
+
+    companion object {
+        val ATTESTATION_RECEIPT_MAX_AGE: Duration = RegistrationChallengeStore.TTL.plusMinutes(1)
+    }
 
     /** @throws ch.veehait.devicecheck.appattest.attestation.AttestationException on any validation failure. */
     fun validateAttestation(

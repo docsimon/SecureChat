@@ -34,7 +34,7 @@ struct RealAttestationTransport: AttestationTransport {
     /// Read lazily, not captured at construction time — the identity key
     /// may not exist yet when the coordinator (and this transport) is first
     /// resolved, only by the time attest() actually drives a request through.
-    let identityPublicKeyBase64: () -> String
+    let identityPublicKeyBase64: @Sendable () -> String
     let onEvent: @Sendable (TransportEvent) -> Void
 
     func fetchChallenge() async throws -> Data {
@@ -82,7 +82,21 @@ struct RealAttestationTransport: AttestationTransport {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(body)
 
-        let data = try await performAuthServerRequest(urlRequest, endpoint: "POST /register", onEvent: onEvent)
+        let data: Data
+        do {
+            data = try await performAuthServerRequest(urlRequest, endpoint: "POST /register", onEvent: onEvent)
+        } catch AttestationError.serverRejected(let detail) where detail.contains("challenge_invalid_or_expired") {
+            // The one rejection the module must hear about specifically (see
+            // `AttestationTransport`'s doc comment): the attestation we are
+            // resubmitting is bound to a challenge the server no longer
+            // holds, and the key behind it can never be attested again.
+            // Reported as a plain `.serverRejected`, the coordinator would
+            // keep `.attestationPending` and resubmit this dead blob forever.
+            // Safe to map unconditionally: /register checks idempotency on
+            // keyId BEFORE the challenge (Routes.kt), so an already-registered
+            // key never gets this answer.
+            throw AttestationError.challengeExpired
+        }
 
         let decoded = try JSONDecoder().decode(RegisterResponseBody.self, from: data)
         onEvent(.submitted(accountUUID: decoded.accountUuid))

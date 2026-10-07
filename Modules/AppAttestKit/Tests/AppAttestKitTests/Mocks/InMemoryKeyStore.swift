@@ -54,8 +54,19 @@ final class InMemoryKeyStore: AttestationKeyStore, @unchecked Sendable {
         return isAttested
     }
 
+    /// When true, `store(isAttested:)` throws — simulates the Keychain write
+    /// failing right after the server confirmed registration.
+    var failsIsAttestedWrites: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _failsIsAttestedWrites }
+        set { lock.lock(); defer { lock.unlock() }; _failsIsAttestedWrites = newValue }
+    }
+    private var _failsIsAttestedWrites = false
+
+    struct WriteFailure: Error {}
+
     func store(isAttested: Bool) throws {
         lock.lock(); defer { lock.unlock() }
+        if _failsIsAttestedWrites { throw WriteFailure() }
         self.isAttested = isAttested
     }
 

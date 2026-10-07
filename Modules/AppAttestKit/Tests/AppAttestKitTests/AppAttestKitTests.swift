@@ -153,6 +153,36 @@ struct ResumptionTests {
         #expect(await transport.submittedRequests.count == 1)
     }
 
+    @Test("ensureAttested() WITHOUT restore() still resumes from a cached attestation")
+    func resumesFromAttestationPendingWithoutRestore() async throws {
+        // Same crash as above, but the app never called restore() — a fresh
+        // coordinator whose in-memory state is still `.none`. It must read the
+        // store itself rather than re-attest the one-shot key.
+        let store = InMemoryKeyStore(keyId: testKeyId,
+                                      cachedAttestation: (testAttestation, testChallenge))
+        let (coordinator, service, _, transport, _) = makeCoordinator(keyStore: store)
+
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+
+        #expect(final == .attested(keyId: testKeyId))
+        #expect(await service.generateKeyCallCount == 0)
+        #expect(await service.attestKeyCallCount == 0)
+        #expect(await transport.fetchChallengeCallCount == 0)
+        #expect(await transport.submittedRequests.count == 1)
+    }
+
+    @Test("ensureAttested() WITHOUT restore() recognises an already-registered key")
+    func recognisesAttestedWithoutRestore() async throws {
+        let store = InMemoryKeyStore(keyId: testKeyId, isAttested: true)
+        let (coordinator, service, _, transport, _) = makeCoordinator(keyStore: store)
+
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+
+        #expect(final == .attested(keyId: testKeyId))
+        #expect(await service.attestKeyCallCount == 0)
+        #expect(await transport.submittedRequests.isEmpty)
+    }
+
     @Test("restore() checks attested before a stale cached attestation")
     func restoreChecksAttestedFirst() async throws {
         // A registered user whose cache was never cleared for some reason
@@ -196,6 +226,23 @@ struct RetryPolicyTests {
         #expect(await service.generateKeyCallCount == 1)
         #expect(observer.failures.count == 2)
         #expect(observer.failures.allSatisfy { $0.error == .retryable("serverUnavailable") })
+        // Each retry re-enters the flow at the same `.keyGenerated` state; the
+        // observer must see that state once, not once per attempt.
+        #expect(observer.transitions.filter { $0 == .keyGenerated(keyId: testKeyId) }.count == 1)
+    }
+
+    @Test("No backoff after the final attempt — exhausted is reported immediately", .timeLimit(.minutes(1)))
+    func noBackoffAfterFinalAttempt() async throws {
+        let (coordinator, _, _, _, _) = makeCoordinator(
+            fetchChallengeResults: [.failure(GenericNetworkError())],
+            // A single attempt with an hour-long backoff: this only finishes
+            // inside the time limit if the last attempt is NOT followed by a sleep.
+            policy: .init(maxAttempts: 1, backoff: { _ in .seconds(3600) })
+        )
+
+        await #expect(throws: AttestationError.exhausted) {
+            try await coordinator.ensureAttested(binding: identityBinding)
+        }
     }
 
     @Test("A generic network error on fetchChallenge is retried, not treated as terminal")
@@ -262,6 +309,102 @@ struct RetryPolicyTests {
         #expect(final == .unsupported(.unsupported))
         #expect(await service.generateKeyCallCount == 0)
         #expect(observer.failures.first?.error == .unsupported)
+    }
+}
+
+// MARK: - Failures at the registration step
+//
+// Everything here starts from `.attestationPending`: Apple has already
+// attested the key (one-shot, cannot be repeated), and only the server
+// round trip is left. Each failure must land in a defined state.
+
+@Suite("Failures while submitting to the server")
+struct SubmitFailureTests {
+
+    private static func pendingStore() -> InMemoryKeyStore {
+        InMemoryKeyStore(keyId: "key-1", cachedAttestation: (testAttestation, testChallenge))
+    }
+
+    @Test("challengeExpired discards the dead key and registers a fresh one")
+    func challengeExpiredRegenerates() async throws {
+        let store = Self.pendingStore()
+        let (coordinator, service, _, transport, _) = makeCoordinator(
+            generateKeyResults: [.success("key-2")],
+            submitResults: [.failure(AttestationError.challengeExpired), .success(testAccountUUID)],
+            keyStore: store
+        )
+
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+
+        #expect(final == .attested(keyId: "key-2"))
+        #expect(await service.generateKeyCallCount == 1)
+        #expect(await service.attestKeyCallCount == 1)
+        // The stale submission, then the fresh one — never the stale one twice.
+        #expect(await transport.submittedRequests.map(\.keyId) == ["key-1", "key-2"])
+    }
+
+    @Test("serverRejected is terminal and leaves the pending attestation untouched")
+    func serverRejectedKeepsPendingState() async throws {
+        let store = Self.pendingStore()
+        let (coordinator, service, _, transport, _) = makeCoordinator(
+            submitResults: [.failure(AttestationError.serverRejected("identity_mismatch"))],
+            keyStore: store
+        )
+
+        await #expect(throws: AttestationError.serverRejected("identity_mismatch")) {
+            try await coordinator.ensureAttested(binding: identityBinding)
+        }
+
+        // No retry, no new key, nothing discarded: a server-side "no" is not
+        // evidence the key is dead. Starting over is the app's explicit call
+        // (acknowledgeKeyInvalidation()).
+        #expect(await transport.submittedRequests.count == 1)
+        #expect(await service.generateKeyCallCount == 0)
+        #expect(await service.attestKeyCallCount == 0)
+        #expect(await coordinator.currentState ==
+                .attestationPending(keyId: "key-1", attestation: testAttestation, challenge: testChallenge))
+        #expect(try store.loadAttestation() != nil)
+    }
+
+    @Test("A retryable server failure resubmits the SAME attestation")
+    func retryableSubmitFailureResubmits() async throws {
+        let store = Self.pendingStore()
+        let (coordinator, service, _, transport, _) = makeCoordinator(
+            submitResults: [.failure(AttestationError.retryable("HTTP 500")),
+                            .failure(GenericNetworkError()),
+                            .success(testAccountUUID)],
+            keyStore: store
+        )
+
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+
+        #expect(final == .attested(keyId: "key-1"))
+        #expect(await transport.submittedRequests.count == 3)
+        #expect(await transport.fetchChallengeCallCount == 0)
+        #expect(await service.attestKeyCallCount == 0)
+    }
+
+    @Test("If recording the confirmation fails, the cached attestation is kept for a resubmit")
+    func failedConfirmationWriteKeepsCache() async throws {
+        let store = Self.pendingStore()
+        store.failsIsAttestedWrites = true
+        let (coordinator, service, _, transport, _) = makeCoordinator(keyStore: store)
+
+        await #expect(throws: InMemoryKeyStore.WriteFailure.self) {
+            try await coordinator.ensureAttested(binding: identityBinding)
+        }
+        #expect(try store.loadAttestation() != nil)
+        #expect(await coordinator.currentState.label == "attestationPending")
+
+        // Next call: resubmit only. The server's idempotency on keyId returns
+        // the same account; Apple is never asked again.
+        store.failsIsAttestedWrites = false
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+
+        #expect(final == .attested(keyId: "key-1"))
+        #expect(await transport.submittedRequests.count == 2)
+        #expect(await service.attestKeyCallCount == 0)
+        #expect(await service.generateKeyCallCount == 0)
     }
 }
 
@@ -372,5 +515,27 @@ struct KeyInvalidationAcknowledgementTests {
             await coordinator.acknowledgeKeyInvalidation()
             #expect(await coordinator.currentState == .none)
         }
+    }
+
+    @Test("Cancels an in-flight ensureAttested() instead of letting it resume into the cleared state",
+          .timeLimit(.minutes(1)))
+    func cancelsInFlightFlow() async throws {
+        // Every /challenge fails, with an hour of backoff: the flow parks in
+        // its first backoff sleep holding key-1.
+        let (coordinator, service, store, _, observer) = makeCoordinator(
+            generateKeyResults: [.success("key-1"), .success("key-2")],
+            fetchChallengeResults: [.failure(GenericNetworkError())],
+            policy: .init(backoff: { _ in .seconds(3600) })
+        )
+        let flow = Task { try await coordinator.ensureAttested(binding: identityBinding) }
+        while observer.failures.isEmpty { await Task.yield() }
+
+        await coordinator.acknowledgeKeyInvalidation()
+
+        await #expect(throws: CancellationError.self) { try await flow.value }
+        #expect(await coordinator.currentState == .none)
+        #expect(try store.loadKeyId() == nil)
+        // The cancelled flow must not have gone on to mint key-2 by itself.
+        #expect(await service.generateKeyCallCount == 1)
     }
 }

@@ -8,7 +8,7 @@ work, now that `AuthServer/` exists. Where a scenario is already covered
 well there (kill-and-relaunch restore, normal-launch-never-re-purges), this
 file cross-references it instead of duplicating it.
 
-Last updated 2026-09-29.
+Last updated 2026-10-06.
 
 ---
 
@@ -39,6 +39,49 @@ Verified server-side (a real `500` while Postgres was stopped, recovered
 cleanly once restarted) — B6/B7 below now test the client's retry behavior
 against this fix on a real device, not just document the gap.
 
+Two more fixed during real-device testing of B3:
+
+- **Duplicate "App Attest key generated" log entries.** `attemptRegistration()`
+  re-enters on every retry and re-transitions to the same `.keyGenerated(keyId)`
+  even though no new `generateKey()` runs. The harness's `realAttemptCount`
+  already guarded against over-counting this, but the log line didn't. Now
+  deduplicated per distinct `keyId` within one attempt (`HarnessFlowModel.recordTransition`).
+- **keyId in the log.** The `keyGenerated` log entry now carries the real keyId in
+  its detail field, so sameness across retries/steps is checkable by eye. This is
+  a deliberate exception to the harness's usual "never log keyId" rule — safe
+  only because History is in-memory and never persisted, synced, or crash-reported
+  (same reasoning as the raw CBOR hex already logged there). Don't extend it.
+
+## Test-harness change: step control instead of a split flow
+
+The harness has one flow button, **Register (ensureAttested)**, which calls
+the same `ensureAttested()` the real app will ship. An earlier revision split
+it into "Attest (Apple)" / "Register (Auth Server)" using a DEBUG-only
+`attestOnly()` in the module — removed, because it tested a code path (single
+attempt, no retry loop) that production never runs.
+
+Control over individual steps now comes from **Step control**
+(`ControllableTransport.swift`), which wraps the app-owned transport:
+
+- Per endpoint (`GET /challenge`, `POST /register`): pass through, pause
+  before sending, pause after the response, or fail with a chosen error.
+- While paused, an orange **Paused … — Continue** row appears. Force-quit,
+  cut the network or stop Docker before tapping it.
+- Settings are sticky until changed and reset to pass-through on relaunch.
+  *Fail: challenge expired* is the exception: it fires once, so the
+  regenerated key is not expired again.
+- "Reset module state" and "Delete identity key" now call the module's
+  production `acknowledgeKeyInvalidation()` (there is no `debugReset()` any
+  more) and work while a flow is paused or retrying — that is how to abort one.
+- The banner shows the coordinator's real state, live.
+
+The expected outcome of every case is in `attestation-error-state-table.md`;
+the row numbers below refer to it. Wherever the tables in this file say
+"Attest", read "Register".
+
+Apple-side failures cannot be injected. To make `attestKey` fail for real:
+/challenge → *Pause after the response*, enable airplane mode, Continue.
+
 ---
 
 ## Suite 1 — First install through registration
@@ -63,9 +106,9 @@ full reinstall (spends no extra real key generation by itself — see
 |---|---|---|---|
 | B1 | Airplane mode ON, then tap Attest | `GET /challenge` never reaches the server (nothing in docker logs) → `.networkUnavailable`, retried with backoff, eventually `exhausted` if airplane mode stays on through all retries | The harness's `requestFailed` event shows `statusCode: nil` ("server never reached") — confirms this is a real connectivity failure, not a masked rejection |
 | B2 | Airplane mode ON, wait ~10s, turn OFF mid-retry-backoff | Coordinator's retry loop picks up the recovered connection on its next scheduled attempt and succeeds | No manual retry needed — this is the resilience the backoff design exists for |
-| B3 | Wi-Fi OFF but cellular ON (device has internet, but can't reach the Mac's LAN IP) | `fetchChallenge()` runs BEFORE `attestKey()` (`AttestationCoordinator.attemptRegistration`) and needs the LAN — so for a *fresh* flow this fails at `GET /challenge`, before Apple is ever contacted. Confirmed on a real device: exhausted after 5 attempts with no "CBOR attestation object received" log entry, meaning `attestKey()` never ran. | Check the history for `.attestationStepAttested` ("CBOR attestation object received") to tell these apart — present means `attestKey()` genuinely succeeded; absent means it failed earlier, at `/challenge`. This case doesn't actually exercise "Apple reachable, LAN not" the way it sounds — B5 is the one that does, by cutting Wi-Fi *after* that log entry appears |
+| B3 | Wi-Fi OFF but cellular ON (device has internet, but can't reach the Mac's LAN IP) | `fetchChallenge()` runs BEFORE `attestKey()` (`AttestationCoordinator.attemptRegistration`) and needs the LAN — so for a *fresh* flow this fails at `GET /challenge`, before Apple is ever contacted. Confirmed on a real device: exhausted after 5 attempts with no "CBOR attestation object received" log entry, meaning `attestKey()` never ran. | Check the history for `.attestationStepAttested` ("CBOR attestation object received") to tell these apart — present means `attestKey()` genuinely succeeded; absent means it failed earlier, at `/challenge`. This case doesn't actually exercise "Apple reachable, LAN not" the way it sounds — F1 is the one that does |
 | B4 | `docker compose stop auth-server` before tapping Attest, restart it ~5s later | Same as B2's recovery pattern — `.networkUnavailable`, retried, succeeds once the container's back up | Confirm the request that finally succeeds shows in the *restarted* container's logs, not stale output from before the stop |
-| B5 | Kill Wi-Fi on the phone **immediately after** the CBOR attestation log entry appears (i.e., right after Apple responds, before `/register` completes) | Module persists `.attestationPending` to disk *before* attempting `/register` (module doc §7a) — force-quit the app now, restore Wi-Fi, relaunch | State should restore as `.attestationPending` and resume straight to `POST /register` on the next attempt — **no re-attestation with Apple**, since the key is one-shot. This is the single most important resumability case in this whole checklist. |
+| B5 | **Superseded by section F below.** The original plan timed a Wi-Fi cut against the CBOR log line — a race a few hundred ms wide, not reliable by hand. Use Step control instead. | — | See F1–F4 |
 | B6 | `docker compose stop postgres` (leave `auth-server` and `redis` running), then tap Attest | `auth-server` can't reach its DB → real `500` from `/register` → now classified `.retryable`, not terminal | Confirmed server-side already: a real `500 {"error":"internal_error"}` while Postgres is stopped. This case is about confirming the *client* retries it rather than giving up immediately. |
 | B7 | Same as B6, but restart `postgres` while the app is mid-retry-backoff | Should recover automatically, matching B2/B4 — the retry succeeds once Postgres is healthy again | If this doesn't self-recover, that's a real regression against the fix made this session |
 
@@ -92,6 +135,38 @@ budget to track and no `exhausted`/debug-reset fallback to exercise anymore;
 |---|---|---|---|
 | D1 | Force several genuine `.keyInvalid`/reinstall cycles in a row (see Suite 2) | Each cycle regenerates cleanly via `acknowledgeKeyInvalidation()` — no `exhausted`, no debug-reset fallback, no decisional branching on a call count anywhere in the path | Confirms the removal didn't leave any stray dependency on a counter that no longer exists |
 | D2 | During D1, count how many *real* key generations actually happened vs. how many "App Attest Key Generated" log lines appeared | These should match — retry-loop reflections of the same `keyId` (e.g. from B1/B4's retries) must not inflate the count | Regression check for the over-counting bug fixed this session (`lastCountedKeyId` guard in `HarnessFlowModel`) — unrelated to the cap removal, still worth checking here |
+
+### F. Interruption and resumption (Step control)
+
+Setup for every case: clean module state (Delete identity key, then Generate
+Identity Key), Wi-Fi on, `docker compose logs -f auth-server` open, and the
+"real attempts" counter noted before starting.
+
+What every case is checking, in order of importance:
+
+1. **Exactly one real `generateKey()` and one real `attestKey()` across the
+   whole case** unless the row says a new key is expected. Real attempts goes up by 1.
+2. **The CBOR is reused, not re-minted.** On resume, the docker logs show
+   `POST /register` only — no `GET /challenge` — and the history shows no second
+   "CBOR attestation object received" entry.
+3. **The banner state after each call matches the table row.**
+
+| # | Step control | Then | Expected (table row) |
+|---|---|---|---|
+| F1 | /register → Pause before sending | Register → wait for the pause → Wi-Fi off → Continue | Retries with `networkUnavailable`, then `exhausted` after ~30 s. State `attestationPending`. Nothing in docker logs (row 11) |
+| F1b | as F1 | Turn Wi-Fi back on during the backoff | The same call recovers and registers. Docker: `/register` 200, no `/challenge` (row 11) |
+| F2 | /register → Pause before sending | Register → pause → `docker compose stop auth-server` → Continue | As F1; failure is `networkUnavailable`, not `serverRejected` (row 11) |
+| F2b | as F2 | `docker compose start auth-server`, during backoff or then tap Register again | Registers. `/register` only (row 11) |
+| F3 | /register → Fail: HTTP 500 | Register; mid-backoff set /register → Pass through | Retries, then succeeds on the next attempt (row 12) |
+| F4 | /register → Pause before sending | Register → pause → **force-quit** → relaunch → Register | History: "found existing state on launch: attestationPending". Register submits the cached CBOR; no new key, no new CBOR (row 18) |
+| F5 | /challenge → Pause before sending | Register → pause → force-quit → relaunch → Register | Relaunch shows "found existing state on launch: keyGenerated" — real attempts unchanged by the relaunch, +1 for the whole case (row 17) |
+| F6 | /register → Pause after the response | Register → pause → force-quit → relaunch → Register | Postgres has the account already; client relaunches as `attestationPending`; resubmit returns the **same** `account_uuid`, still one row (row 19) |
+| F7 | /register → Send, then lose the response | Register; mid-backoff set /register → Pass through | Same account UUID on the retry, one row in Postgres (row 13) |
+| F8 | /register → Fail: challenge expired (fires once, then resets itself to Pass through) | Register | Old key discarded, **new** key and CBOR, registers. Real attempts +2 (row 14). Real-server variant: pause before /register, `DEL` the challenge key in Redis, Continue |
+| F9 | /register → Fail: HTTP 400 (rejected) | Register, then Register again | Each tap: one rejection, no retry, state stays `attestationPending`, no new key (row 15). Clear with Reset module state |
+| F10 | /challenge → Pause after the response | Register → pause → airplane mode → Continue; later airplane mode off | `attestKey` fails for real → `retryable`, same key; recovers when the network is back (row 7) |
+| F11 | /register → Pause before sending | Register → pause → Danger zone → Reset module state | "ensureAttested() cancelled by a reset", state `none`, nothing sent to `/register`, no new key generated behind your back (row 20) |
+| F12 | all Pass through | Register, then Sign Assertion | Happy path: `POST /session` 200 |
 
 ### E. Concurrency
 

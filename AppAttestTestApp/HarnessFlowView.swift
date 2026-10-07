@@ -47,20 +47,13 @@ struct HarnessFlowView: View {
                         )
                         StepRow(
                             number: 2,
-                            title: "Attest (Apple)",
-                            subtitle: "Generates/reuses the App Attest key, stops at attestationPending",
-                            state: attestState,
-                            action: { Task { await model.attestOnly() } }
+                            title: "Register (ensureAttested)",
+                            subtitle: "The production flow: key → /challenge → Apple → /register. Resumes from the persisted state — tap again after a failure",
+                            state: registerState,
+                            action: { Task { await model.register() } }
                         )
                         StepRow(
                             number: 3,
-                            title: "Register (Auth Server)",
-                            subtitle: "Submits the cached attestation to /register — no Apple call",
-                            state: registerState,
-                            action: { Task { await model.registerOnly() } }
-                        )
-                        StepRow(
-                            number: 4,
                             title: "Sign Assertion",
                             subtitle: "Repeatable — every authenticated request does this",
                             state: signState,
@@ -68,6 +61,28 @@ struct HarnessFlowView: View {
                             action: { Task { await model.sign() } }
                         )
                     }
+
+                    if let point = model.gate.pausedAt {
+                        Button {
+                            model.gate.release()
+                        } label: {
+                            HStack {
+                                Image(systemName: "pause.circle.fill")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Paused \(point)").font(.headline)
+                                    Text("Tap to continue — or force-quit / cut the network first")
+                                        .font(.caption)
+                                }
+                                Spacer()
+                                Image(systemName: "play.fill")
+                            }
+                            .padding(12)
+                            .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    stepControl
 
                     NavigationLink(destination: HarnessHistoryListView(sessions: model.sessions)) {
                         HStack {
@@ -160,21 +175,82 @@ struct HarnessFlowView: View {
         model.transportBackend = .custom(url)
     }
 
+    /// Per-endpoint pause / failure injection — see ControllableTransport.swift.
+    /// Read by the transport when the coordinator calls the endpoint, so set
+    /// it BEFORE tapping Register (or mid-backoff, for the next retry).
+    private var stepControl: some View {
+        @Bindable var gate = model.gate
+        return DisclosureGroup("Step control") {
+            VStack(alignment: .leading, spacing: 8) {
+                // Outside a Form a menu Picker hides its own label, so the
+                // endpoint name is drawn explicitly next to it.
+                HStack {
+                    Text("GET /challenge")
+                        .font(.system(.subheadline, design: .monospaced).bold())
+                    Spacer()
+                    Picker("GET /challenge", selection: $gate.challengeBehavior) {
+                        ForEach(EndpointBehavior.challengeOptions) { Text($0.rawValue).tag($0) }
+                    }
+                    .labelsHidden()
+                }
+                Text("Your Auth Server issues the 32 random bytes Apple will sign over. Called after the App Attest key exists, before Apple is contacted.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Divider()
+                HStack {
+                    Text("POST /register")
+                        .font(.system(.subheadline, design: .monospaced).bold())
+                    Spacer()
+                    Picker("POST /register", selection: $gate.registerBehavior) {
+                        ForEach(EndpointBehavior.registerOptions) { Text($0.rawValue).tag($0) }
+                    }
+                    .labelsHidden()
+                }
+                Text("Sends Apple's attestation to your Auth Server, which verifies it and returns the account UUID. Called after Apple has answered.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Divider()
+                Text("Applies to the next call of that endpoint and stays until changed. Resets to pass-through on relaunch.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 8)
+        }
+        .padding(12)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     private var banner: some View {
         HStack {
             Text("state: \(model.stateLabel)")
                 .font(.system(.footnote, design: .monospaced))
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text("DEV SANDBOX")
+                Text(environmentBadge.text)
                     .font(.caption2.bold())
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Color.green.opacity(0.2), in: Capsule())
-                    .foregroundStyle(.green)
-                Text("\(model.realAttemptCount) real attempts")
+                    .background(environmentBadge.color.opacity(0.2), in: Capsule())
+                    .foregroundStyle(environmentBadge.color)
+                Text("\(model.realAttemptCount) keys generated (local)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("\(model.appleAttestationCount) Apple attestations")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// From the aaguid in Apple's own attestation response, never from the
+    /// entitlement — see `HarnessFlowModel.attestationEnvironment`. Grey means
+    /// "no evidence", which is not the same as "development".
+    private var environmentBadge: (text: String, color: Color) {
+        switch model.attestationEnvironment {
+        case .development: return ("APPLE: DEVELOPMENT", .green)
+        case .production: return ("APPLE: PRODUCTION", .red)
+        case .unrecognised: return ("APPLE: UNRECOGNISED AAGUID", .orange)
+        case nil:
+            return (model.attested ? "ENVIRONMENT NOT RECORDED" : "NO ATTESTATION YET", .secondary)
         }
     }
 
@@ -183,15 +259,9 @@ struct HarnessFlowView: View {
         return model.identityGenerated ? .done : .available
     }
 
-    private var attestState: StepRow.State {
-        if model.activeStep == .attest { return .inProgress }
-        if !model.identityGenerated { return .locked }
-        return model.attestationCompleted ? .done : .available
-    }
-
     private var registerState: StepRow.State {
         if model.activeStep == .register { return .inProgress }
-        if !model.attestationCompleted { return .locked }
+        if !model.identityGenerated { return .locked }
         return model.attested ? .done : .available
     }
 

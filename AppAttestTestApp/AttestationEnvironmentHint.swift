@@ -24,15 +24,48 @@
 
 import Foundation
 
+/// Which App Attest environment an attestation object says it came from,
+/// judged ONLY from the aaguid Apple put in it — never from the entitlement
+/// or any other local configuration.
+enum AttestationEnvironment: String {
+    case development
+    case production
+    /// An aaguid was read but matches neither known marker, or the object
+    /// could not be parsed. Deliberately NOT folded into either side: the
+    /// markers below are from Apple's documentation, not yet confirmed
+    /// against this device, and "unrecognised" must never display as "safe".
+    case unrecognised
+}
+
 enum AttestationEnvironmentHint {
+
+    /// Apple's documented markers: the ASCII bytes `appattestdevelop` for
+    /// development, and `appattest` followed by seven zero bytes for production.
+    private static let developmentAAGUID = Data("appattestdevelop".utf8)
+    private static let productionAAGUID = Data("appattest".utf8) + Data(repeating: 0, count: 7)
+
+    static func environment(of attestationObject: Data) -> AttestationEnvironment {
+        guard let aaguid = extractAAGUID(from: attestationObject) else { return .unrecognised }
+        if aaguid == developmentAAGUID { return .development }
+        if aaguid == productionAAGUID { return .production }
+        return .unrecognised
+    }
+
+    /// aaguid sits at a fixed offset inside authData:
+    /// rpIdHash (32 bytes) + flags (1 byte) + counter (4 bytes) = byte 37,
+    /// then 16 bytes of aaguid.
+    private static func extractAAGUID(from attestationObject: Data) -> Data? {
+        guard let authData = extractAuthData(from: attestationObject), authData.count >= 53 else {
+            return nil
+        }
+        let start = authData.startIndex + 37
+        return authData.subdata(in: start..<(start + 16))
+    }
 
     static func describe(_ attestationObject: Data) -> String {
         guard let authData = extractAuthData(from: attestationObject) else {
             return "could not parse authData from the attestation object (CBOR shape unexpected — see AttestationEnvironmentHint.swift)"
         }
-        // aaguid sits at a fixed offset inside authData:
-        // rpIdHash (32 bytes) + flags (1 byte) + counter (4 bytes) = byte 37,
-        // then 16 bytes of aaguid.
         guard authData.count >= 53 else {
             return "authData too short to contain an aaguid (\(authData.count) bytes)"
         }

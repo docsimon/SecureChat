@@ -2,22 +2,21 @@
 //  HarnessFlowModel.swift
 //  AppAttestTestApp
 //
-//  Real version of the guided-sequence flow approved via the mock preview.
 //  Drives AppAttestKit's real AttestationCoordinator against real
 //  DCAppAttestService calls, under the development App Attest environment
-//  (AppAttestTestApp.entitlements) — safe for repeated real-device testing,
-//  since it doesn't count against the production per-device key budget
-//  (confirmed this session — see account-keys-reference.md).
+//  (AppAttestTestApp.entitlements).
 //
-//  Which server (if any) it talks to is a debug setting (TransportBackend),
-//  not hardcoded here — see the "Backend" section in HarnessFlowView. Both
-//  LocalFakeTransport (Apple-side only, no server) and RealAttestationTransport
-//  (Apple-side AND server-side both real) are selected at runtime.
+//  Calls ONLY the module's production API — restore(), ensureAttested(),
+//  sign(), acknowledgeKeyInvalidation() — the same four calls the real app
+//  will make. There is no harness-only entry point into the flow: testing a
+//  DEBUG-only "attest but don't register" path would be testing code that
+//  never ships. Step-by-step control comes from the transport instead (see
+//  ControllableTransport.swift), which is app-owned by design.
 //
-//  Deliberately reads NOTHING from AppAttestKit except its public surface —
-//  AttestationCoordinator.currentState — never LiveKeyStore/
-//  AttestationKeyStore directly. That boundary is the module's core
-//  guarantee (README.md: "the one thing to look for").
+//  Which server (if any) it talks to is a debug setting (TransportBackend).
+//
+//  Reads NOTHING from AppAttestKit except its public surface — never
+//  LiveKeyStore/AttestationKeyStore directly.
 //
 
 import Foundation
@@ -26,47 +25,64 @@ import AppAttestKit
 
 @Observable @MainActor
 final class HarnessFlowModel {
-    enum ActiveStep { case none, identity, attest, register, sign }
+    enum ActiveStep { case none, identity, register, sign }
 
     private(set) var identityGenerated = false
-    /// True once Apple's `attestKey()` has succeeded and `.attestationPending`
-    /// is persisted — independent of `attested`, which only flips once the
-    /// Auth Server has also confirmed `/register`. Split out specifically so
-    /// "Attest (Apple)" and "Register (Auth server)" can be driven as two
-    /// separate, manually-triggered steps (see `attestOnly()`/`registerOnly()`)
-    /// instead of one atomic call — needed to test network/server
-    /// interruptions between the two with full manual control over timing,
-    /// rather than racing a window a few hundred ms wide.
-    private(set) var attestationCompleted = false
-    private(set) var attested = false
+    /// The coordinator's own state, mirrored — updated live from the observer
+    /// while a flow runs (so a paused flow shows where it actually is) and
+    /// re-read from the coordinator after every call.
+    private(set) var moduleState: AttestationState = .none
     private(set) var activeStep: ActiveStep = .none
     private(set) var identityPublicKeyPrefix: String?
 
-    /// Guards BOTH the "App Attest key generated" log line and
-    /// `RealAttemptCounter` against duplication within a single attest()
-    /// call. `transition()` fires the observer unconditionally, even for a
-    /// no-op re-transition to the SAME .keyGenerated(keyId:) — which happens
-    /// on every retry-loop re-entry into attemptRegistration() before state
-    /// ever advances past .keyGenerated (e.g. /challenge failing
-    /// repeatedly). Confirmed on a real device twice now: first 2 network
-    /// retries before a working attempt logged 3 "key generated" events for
-    /// one real generateKey() call; later, a 5-attempt cellular-only
-    /// exhaustion (B3) logged the same key as "generated" 5 times. Reset at
-    /// the start of each attest(); only a genuinely NEW keyId (never a
-    /// DIFFERENT one — same keyId means "still the same generation, just
-    /// observed again") logs and increments the counter.
-    private var lastCountedKeyId: String?
+    /// Step control: per-endpoint pause / failure injection. See
+    /// ControllableTransport.swift.
+    let gate = TransportGate()
+
+    var attested: Bool { moduleState.isAttested }
+
+    /// The environment Apple's OWN response reported for the attestation the
+    /// current state rests on — `nil` when there is no attestation yet, or
+    /// none this install has seen. Drives the banner badge, so the badge is
+    /// evidence rather than a label: it cannot say "development" unless an
+    /// attestation object actually carried the development aaguid.
+    ///
+    /// Remembered in UserDefaults because the attestation object itself is
+    /// deleted once the server confirms it — without this, a relaunch into
+    /// `.attested` would have nothing left to read the answer from.
+    /// UserDefaults (not Keychain) so a reinstall forgets it.
+    var attestationEnvironment: AttestationEnvironment? {
+        switch moduleState {
+        case .attestationPending, .attested:
+            return lastSeenEnvironment
+        case .none, .keyGenerated, .unsupported:
+            return nil
+        }
+    }
+    private static let lastSeenEnvironmentKey = "harness.lastAttestationEnvironment"
+    private var lastSeenEnvironment: AttestationEnvironment? =
+        UserDefaults.standard.string(forKey: lastSeenEnvironmentKey).flatMap(AttestationEnvironment.init(rawValue:)) {
+        didSet { UserDefaults.standard.set(lastSeenEnvironment?.rawValue, forKey: Self.lastSeenEnvironmentKey) }
+    }
 
     /// Local heuristic only — Apple exposes no remaining-budget API
     /// (confirmed against current docs this session). Counts real
     /// generateKey() calls via the .keyGenerated transition — but only
-    /// while an attest() call is actually in flight (see recordTransition);
+    /// while a register() call is actually in flight (see recordTransition);
     /// a bare restore() can ALSO transition into .keyGenerated by reading an
     /// existing keyId off disk, with no real generateKey() call involved.
     /// Keychain-backed, not UserDefaults, so it survives reinstall — the
     /// real budget it's tracking does too.
     var realAttemptCount: Int {
-        RealAttemptCounter.load()
+        RealAttemptCounter.keysGenerated.load()
+    }
+
+    /// Successful `attestKey()` calls — the only registration step that
+    /// reaches Apple's servers. Counted the same way: only while a
+    /// register() call is in flight, so restoring a cached attestation on
+    /// launch is not mistaken for a new one.
+    var appleAttestationCount: Int {
+        RealAttemptCounter.appleAttestations.load()
     }
 
     /// One entry per attempt. "Reset module state" and "Delete identity key"
@@ -74,10 +90,14 @@ final class HarnessFlowModel {
     var sessions: [HarnessSession] = [HarnessSession()]
 
     var stateLabel: String {
-        if attested { return "attested" }
-        if attestationCompleted { return "attestationPending (awaiting registration)" }
-        if identityGenerated { return "identity ready (App Attest not yet requested)" }
-        return "none"
+        switch moduleState {
+        case .none:
+            return identityGenerated ? "none (identity ready)" : "none"
+        case .attestationPending:
+            return "attestationPending (awaiting /register)"
+        default:
+            return moduleState.label
+        }
     }
 
     /// Changing this doesn't touch identity/attestation state — those
@@ -89,9 +109,16 @@ final class HarnessFlowModel {
         get { TransportBackend.current }
         set {
             guard newValue != TransportBackend.current else { return }
+            guard activeStep == .none else {
+                // The running flow holds the OLD transport; swapping under it
+                // would leave two coordinators writing the same Keychain state.
+                log(.backendSwitched, summary: "ignored — finish or reset the running step first", isError: true)
+                return
+            }
             TransportBackend.current = newValue
             // Cached coordinator holds the OLD transport — drop it so the
-            // next resolveCoordinator() rebuilds against the new backend.
+            // next resolveCoordinator() rebuilds (and restores) against the
+            // new backend.
             coordinator = nil
             log(.backendSwitched, summary: "switched to \(newValue.displayName)")
         }
@@ -120,23 +147,18 @@ final class HarnessFlowModel {
     /// (appattest-smoke-checklist.md item 4): without this, the UI would
     /// always show "not started" even after a real prior attestation.
     func restoreOnAppear() async {
-        let coordinator = resolveCoordinator()
+        let coordinator = await resolveCoordinator()
         await runFirstLaunchGateOnce(coordinator: coordinator)
 
         identityGenerated = IdentityKeyStore.exists()
-        guard identityGenerated else { return }
-        if let key = try? IdentityKeyStore.loadOrCreate() {
+        if let key = (try? IdentityKeyStore.loadExisting()) ?? nil {
             identityPublicKeyPrefix = key.publicKey.rawRepresentation.prefix(4)
                 .map { String(format: "%02x", $0) }.joined()
         }
         await coordinator.restore()
         let state = await coordinator.currentState
-        attested = state.isAttested
-        if case .attestationPending = state {
-            attestationCompleted = true
-        } else {
-            attestationCompleted = state.isAttested
-        }
+        moduleState = state
+        guard identityGenerated || state != .none else { return }
         // Structured, not just embedded in the summary text — HarnessSession
         // needs to reliably tell "restored into an already-attested state"
         // apart from "restored into something else," and matching against
@@ -222,97 +244,45 @@ final class HarnessFlowModel {
         }
     }
 
-    /// Phase 1 of 2 — Apple only. Stops at `.attestationPending`, deliberately
-    /// never calls `/register` (see `AttestationCoordinator.attestOnly()`).
-    /// Split from registration specifically so a tester can control
-    /// network/server conditions for as long as they want *between* the two
-    /// phases, instead of racing a timing window a few hundred ms wide.
-    func attestOnly() async {
+    /// THE production flow, unmodified: one `ensureAttested()` call, which
+    /// resumes from whatever state is persisted and runs to `.attested` or
+    /// to an error. To stop it part-way, set a pause or a failure in Step
+    /// control BEFORE tapping — then tap again to watch it resume, exactly as
+    /// a relaunch or a foreground trigger would in the real app.
+    func register() async {
         guard activeStep == .none else { return }
-        activeStep = .attest
-        lastCountedKeyId = nil
-        defer { activeStep = .none }
-
-        // Existence check only — RealAttestationTransport reads the identity
-        // public key itself (independently, per /challenge and /register
-        // call) now that clientDataHash no longer embeds it here.
-        guard identityGenerated, (try? IdentityKeyStore.loadOrCreate()) != nil else {
-            let summary = identityGenerated
-                ? "identity key unavailable despite being marked generated — try Delete Identity Key and Generate again"
-                : "no identity key — generate one first"
-            log(.attestationFailed, summary: summary, isError: true)
-            return
-        }
-
-        log(.attestationStarted, summary: "attestation flow started (Apple only)")
-
-        let coordinator = resolveCoordinator()
-        do {
-            // clientDataHash = SHA256(challenge) alone, NOT SHA256(challenge +
-            // identityPublicKey) — this used to concatenate the identity key
-            // in, matching an earlier design. Revised when the real Auth
-            // Server was built: the verification library it uses fixes this
-            // hash formula with no override seam, so the identity binding
-            // moved server-side instead (the challenge is issued bound to an
-            // identityPublicKey and checked back at /register — see
-            // RealAttestationTransport.swift and account-keys-reference.md).
-            #if DEBUG
-            let result = try await coordinator.attestOnly { challenge in
-                Data(SHA256.hash(data: challenge))
-            }
-            if case .attestationPending = result {
-                attestationCompleted = true
-            } else if result.isAttested {
-                // Already fully attested from a prior run — nothing new to do.
-                attested = true
-                attestationCompleted = true
-            } else {
-                log(.attestationFailed, summary: "ended in state: \(result.label)", isError: true)
-            }
-            #else
-            log(.attestationFailed, summary: "attestOnly is DEBUG-only", isError: true)
-            #endif
-        } catch let error as AttestationError {
-            log(.attestationFailed, summary: error.diagnosticName, isError: true)
-        } catch {
-            log(.attestationFailed, summary: "\(error)", isError: true)
-        }
-    }
-
-    /// Phase 2 of 2 — Auth Server only. Requires `attestOnly()` to have
-    /// already succeeded: `ensureAttested()` resumes from `.attestationPending`
-    /// straight to `submit()` when there's something pending, but if nothing
-    /// is pending yet it would silently run the WHOLE flow (Apple included) —
-    /// guarded against here so this button only ever does the Auth Server
-    /// half, matching what it's labeled.
-    func registerOnly() async {
-        guard activeStep == .none else { return }
-        guard attestationCompleted, !attested else {
-            log(.attestationFailed, summary: "nothing pending — run Attest (Apple) first", isError: true)
+        guard identityGenerated, IdentityKeyStore.exists() else {
+            log(.attestationFailed, summary: "no identity key — generate one first", isError: true)
             return
         }
         activeStep = .register
-        lastCountedKeyId = nil
         defer { activeStep = .none }
 
-        let coordinator = resolveCoordinator()
+        let coordinator = await resolveCoordinator()
+        log(.attestationStarted, summary: "ensureAttested() called — starting from \(await coordinator.currentState.label)")
         do {
-            // Same binding formula as attestOnly() — see its comment. Only
-            // actually used here if somehow nothing was pending (defensive;
-            // the guard above should prevent reaching this with .none/.keyGenerated).
+            // clientDataHash = SHA256(challenge) alone, NOT SHA256(challenge +
+            // identityPublicKey): the server's verification library fixes
+            // this formula, so the identity binding lives server-side (the
+            // challenge is issued bound to an identityPublicKey and checked
+            // back at /register — see RealAttestationTransport.swift).
             let result = try await coordinator.ensureAttested { challenge in
                 Data(SHA256.hash(data: challenge))
             }
-            if result.isAttested {
-                attested = true
-            } else {
+            if !result.isAttested {
                 log(.attestationFailed, summary: "ended in state: \(result.label)", isError: true)
             }
         } catch let error as AttestationError {
-            log(.attestationFailed, summary: error.diagnosticName, isError: true)
+            log(.attestationFailed, summary: "ensureAttested() threw \(error.diagnosticName)", isError: true)
+        } catch is CancellationError {
+            log(.attestationFailed, summary: "ensureAttested() cancelled by a reset", isError: true)
         } catch {
             log(.attestationFailed, summary: "\(error)", isError: true)
         }
+        // Whatever happened, show where the module ACTUALLY ended up — this
+        // is the thing each test case is checking.
+        moduleState = await coordinator.currentState
+        log(.restored, summary: "state after ensureAttested(): \(moduleState.label)")
     }
 
     /// The Secure Enclave signing itself is cheap, repeatable, purely local,
@@ -326,12 +296,9 @@ final class HarnessFlowModel {
     /// no /session request ever reaching the server. See SessionClient.swift.
     func sign() async {
         guard activeStep == .none else { return }
-        guard let coordinator else {
-            log(.signFailed, summary: "sign attempted before attesting", isError: true)
-            return
-        }
         activeStep = .sign
         defer { activeStep = .none }
+        let coordinator = await resolveCoordinator()
         do {
             switch transportBackend {
             case .mock:
@@ -351,7 +318,7 @@ final class HarnessFlowModel {
                         Task { @MainActor in self?.handleTransportEvent(event) }
                     })
                 // No explicit success log here, deliberately — matching how
-                // attest() doesn't log its own success either: the real
+                // register() doesn't log the transport-level success either: the real
                 // events (.challengeFetched, .sessionOpened, ...) come
                 // through onEvent as they actually happen, so logging again
                 // here would duplicate the one that matters.
@@ -380,8 +347,7 @@ final class HarnessFlowModel {
                 identityPublicKeyPrefix = nil
                 await coordinator.acknowledgeKeyInvalidation()
                 identityGenerated = false
-                attestationCompleted = false
-                attested = false
+                moduleState = await coordinator.currentState
                 log(.identityKeyDeleted,
                     summary: "key invalidation acknowledged — identity and module state both cleared (v1 policy), next Generate/Attest starts fully fresh")
                 startNewSession()
@@ -391,48 +357,47 @@ final class HarnessFlowModel {
         }
     }
 
-    /// Matches Option A (appattestkit-module-design.md §8): resetting module
-    /// state does NOT touch the identity key.
+    /// Clears App Attest state only, via the module's PRODUCTION reset
+    /// (`acknowledgeKeyInvalidation()`) — the identity key is kept. Not a
+    /// real v1 recovery path by itself (v1 always wipes both together); a
+    /// diagnostic for exercising the module from `.none` in isolation.
+    ///
+    /// Deliberately NOT gated on `activeStep`: this is how a paused or
+    /// endlessly-retrying flow gets aborted. The coordinator cancels that
+    /// flow and waits for it before clearing anything.
     func resetModuleState() async {
-        #if DEBUG
-        if let coordinator {
-            await coordinator.debugReset()
-        }
+        let coordinator = await resolveCoordinator()
+        await coordinator.acknowledgeKeyInvalidation()
         RegisteredAccountStore.current = nil
-        attestationCompleted = false
-        attested = false
-        log(.moduleReset, summary: "module state cleared — identity key kept, matches Option A. Next Attest spends a real key generation.")
+        lastSeenEnvironment = nil
+        moduleState = await coordinator.currentState
+        log(.moduleReset, summary: "module state cleared — identity key kept. Next Register spends a real key generation.")
         startNewSession()
-        #else
-        log(.attestationFailed, summary: "debugReset is DEBUG-only", isError: true)
-        #endif
     }
 
+    /// The v1 policy in one button: identity key and module state go together.
     func deleteIdentityKey() async {
+        // Module first: an in-flight flow must be stopped BEFORE the identity
+        // key disappears from under its transport.
+        let coordinator = await resolveCoordinator()
+        await coordinator.acknowledgeKeyInvalidation()
         IdentityKeyStore.delete()
         RegisteredAccountStore.current = nil
         identityGenerated = false
-        attestationCompleted = false
-        attested = false
         identityPublicKeyPrefix = nil
-        #if DEBUG
-        // Without this, the coordinator's in-memory state can still say
-        // .attested from before the delete — and AttestationCoordinator.run()
-        // returns immediately on `state.isAttested`, without ever contacting
-        // Apple again, for an identity that no longer matches it.
-        if let coordinator {
-            await coordinator.debugReset()
-        }
-        log(.identityKeyDeleted, summary: "identity key and module state cleared — next Attest starts fully fresh")
-        #else
-        log(.identityKeyDeleted, summary: "identity key deleted, but debugReset is DEBUG-only — module state may still read attested", isError: true)
-        #endif
+        lastSeenEnvironment = nil
+        moduleState = await coordinator.currentState
+        log(.identityKeyDeleted, summary: "identity key and module state cleared — next Register starts fully fresh")
         startNewSession()
     }
 
     // MARK: - Wiring
 
-    private func resolveCoordinator() -> AttestationCoordinator {
+    /// A freshly built coordinator is restored before anyone uses it: its
+    /// in-memory state starts at `.none`, and `sign()` reads only that.
+    /// (`ensureAttested()` would rebuild from disk by itself; `sign()`, the
+    /// thin hot path, deliberately does not.)
+    private func resolveCoordinator() async -> AttestationCoordinator {
         if let coordinator { return coordinator }
         let transport = makeTransport()
         let observer = HarnessObserver(
@@ -441,31 +406,43 @@ final class HarnessFlowModel {
             },
             onFailure: { [weak self] error, attempt in
                 Task { @MainActor in
-                    self?.log(.attestationFailed, summary: "\(error.diagnosticName) (attempt \(attempt))", isError: true)
+                    // The detail carries the error's associated text (Apple's
+                    // DCError code name, or the endpoint + HTTP status) — never a
+                    // keyId. Without it every Apple failure reads just "retryable".
+                    self?.log(.attestationFailed, summary: "\(error.diagnosticName) (attempt \(attempt))",
+                              detail: [DetailField(label: "Error", value: String(describing: error))],
+                              isError: true)
                 }
             })
         let coordinator = AttestationCoordinator(transport: transport, observer: observer)
         self.coordinator = coordinator
+        await coordinator.restore()
         return coordinator
     }
 
     private func makeTransport() -> AttestationTransport {
-        let identityPublicKeyBase64: () -> String = {
-            guard let key = try? IdentityKeyStore.loadOrCreate() else { return "" }
+        // Never creates: a key that vanished mid-flow must surface as a
+        // server-side rejection, not be silently replaced by a new identity.
+        let identityPublicKeyBase64: @Sendable () -> String = {
+            guard let key = (try? IdentityKeyStore.loadExisting()) ?? nil else { return "" }
             return key.publicKey.rawRepresentation.base64EncodedString()
         }
         let onEvent: @Sendable (TransportEvent) -> Void = { [weak self] event in
             Task { @MainActor in self?.handleTransportEvent(event) }
         }
+        let base: AttestationTransport
         switch transportBackend {
         case .mock:
-            return LocalFakeTransport(onEvent: onEvent)
+            base = LocalFakeTransport(onEvent: onEvent)
         case .localDocker, .custom:
-            return RealAttestationTransport(
+            base = RealAttestationTransport(
                 baseURL: currentBaseURL(),
                 identityPublicKeyBase64: identityPublicKeyBase64,
                 onEvent: onEvent)
         }
+        // Every backend goes through Step control — with both endpoints on
+        // "Pass through" it is a plain pass-through.
+        return ControllableTransport(base: base, gate: gate, onEvent: onEvent)
     }
 
     /// Shared by makeTransport() and sign()'s real-backend branch — both
@@ -489,31 +466,37 @@ final class HarnessFlowModel {
     /// key) — never persisted, synced, or sent to a crash reporter. Do not
     /// extend this exception to anything that outlives this in-memory list.
     private func recordTransition(_ newState: AttestationState) {
+        moduleState = newState
         switch newState {
         case .none:
             break
         case .keyGenerated(let keyId):
-            // Only log/count it once per DISTINCT keyId — see
-            // lastCountedKeyId's doc comment for why a retry loop re-enters
-            // attemptRegistration() and reflects the same .keyGenerated
-            // state multiple times with no new generateKey() call in
-            // between. The keyId itself is in the log detail specifically
-            // so this is independently verifiable, not just asserted.
-            guard keyId != lastCountedKeyId else { break }
+            // The coordinator reports each state once (no repeat per retry),
+            // so inside a running Register this transition means one real
+            // generateKey() call. Outside one it is restore() reading an
+            // existing keyId back off disk — no Secure Enclave work at all,
+            // and must not be logged or counted as a generation. Nothing is
+            // logged for it here: on an ordinary launch restoreOnAppear()
+            // already reports "found existing state on launch", and on the
+            // first launch after a reinstall the key is about to be purged,
+            // so announcing it would only be noise.
+            guard activeStep == .register else { break }
             log(.attestationStepKeyGenerated, summary: "App Attest key generated — no network involved",
                 detail: [DetailField(label: "Key ID", value: keyId)])
-            // Only count transitions observed during an ACTIVE attest() call.
-            // restore() can also transition into .keyGenerated merely by
-            // reading an existing keyId back off disk (no real generateKey()
-            // call involved) — and restore() now runs unconditionally on
-            // every launch, plus again inside the first-launch purge gate.
-            // Counting those would inflate this heuristic on every ordinary
-            // launch that happens to find a mid-flow-crashed state.
-            if activeStep == .attest {
-                lastCountedKeyId = keyId
-                RealAttemptCounter.increment()
-            }
+            RealAttemptCounter.keysGenerated.increment()
         case .attestationPending(_, let attestationData, _):
+            let environment = AttestationEnvironmentHint.environment(of: attestationData)
+            lastSeenEnvironment = environment
+            if activeStep == .register {
+                RealAttemptCounter.appleAttestations.increment()
+            }
+            if environment != .development {
+                log(.attestationFailed,
+                    summary: environment == .production
+                        ? "⚠️ PRODUCTION attestation — Apple's response carries the production aaguid. Stop and check the entitlement and how this build was installed."
+                        : "⚠️ attestation environment not recognised — the aaguid matches neither known marker; see the Environment field below",
+                    isError: true)
+            }
             log(.attestationStepAttested, summary: "CBOR attestation object received (\(attestationData.count) bytes)",
                 detail: [
                     DetailField(label: "Format", value: "CBOR — {fmt, attStmt, authData}"),
@@ -552,6 +535,10 @@ final class HarnessFlowModel {
                 detail: [DetailField(label: "Account UUID", value: accountUUID)])
         case .sessionOpened(let tokenByteCount):
             log(.assertionSigned, summary: "POST /session → Auth Server, session token issued (\(tokenByteCount) bytes)")
+        case .paused(let point):
+            log(.stepControl, summary: "PAUSED \(point) — tap Continue, or force-quit / cut the network first")
+        case .resumed(let point):
+            log(.stepControl, summary: "continued \(point)")
         case .requestFailed(let endpoint, let statusCode, let detail):
             // This is what the coordinator's own .networkUnavailable label
             // can't tell you: whether the server was ever actually reached.

@@ -26,7 +26,7 @@ enum IdentityKeyStore {
     private static let account = "identityKey"
 
     static func loadOrCreate() throws -> Curve25519.KeyAgreement.PrivateKey {
-        if let existing = try load() {
+        if let existing = try loadExisting() {
             return existing
         }
         let key = Curve25519.KeyAgreement.PrivateKey()
@@ -43,10 +43,13 @@ enum IdentityKeyStore {
         // thrown error and a genuine "no key stored" both collapse to nil,
         // which is fine for this check: either way, the answer is "no
         // identity key to reflect in the UI yet."
-        (try? load()) != nil
+        (try? loadExisting()) != nil
     }
 
-    private static func load() throws -> Curve25519.KeyAgreement.PrivateKey? {
+    /// Read-only — never generates. Use this anywhere a missing key is an
+    /// error to report rather than something to silently paper over with a
+    /// brand-new identity (e.g. while a registration is already in flight).
+    static func loadExisting() throws -> Curve25519.KeyAgreement.PrivateKey? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

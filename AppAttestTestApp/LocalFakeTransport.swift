@@ -39,6 +39,10 @@ enum TransportEvent: Sendable {
     /// failure class from "couldn't reach it." See `AuthServerRequest.swift`'s
     /// `performAuthServerRequest` for why this distinction matters.
     case requestFailed(endpoint: String, statusCode: Int?, detail: String)
+    /// Step control (`ControllableTransport`) is holding the flow at this
+    /// point / has let it go on.
+    case paused(at: String)
+    case resumed(at: String)
 }
 
 struct LocalFakeTransport: AttestationTransport {

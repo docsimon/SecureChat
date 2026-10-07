@@ -38,6 +38,7 @@ struct HarnessEvent: Identifiable {
         case moduleReset = "Module State Reset"
         case identityKeyDeleted = "Identity Key Deleted"
         case backendSwitched = "Backend Switched"
+        case stepControl = "Step Control (harness)"
 
         var systemImage: String {
             switch self {
@@ -55,6 +56,7 @@ struct HarnessEvent: Identifiable {
             case .moduleReset: return "arrow.counterclockwise"
             case .identityKeyDeleted: return "trash"
             case .backendSwitched: return "server.rack"
+            case .stepControl: return "pause.circle"
             }
         }
     }

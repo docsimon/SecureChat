@@ -13,6 +13,7 @@
 
 import Testing
 import SwiftUI
+import AppAttestKit
 @testable import AppAttestTestApp
 
 @Suite("FirstLaunchPurgeGate")
@@ -165,6 +166,20 @@ struct AttestationEnvironmentHintTests {
         let expectedHex = aaguid.map { String(format: "%02x", $0) }.joined()
         #expect(result.contains(expectedHex))
         #expect(result.contains("\"\(marker)\""))
+    }
+
+    @Test("Classifies the environment from the aaguid alone")
+    func classifiesEnvironment() {
+        let development = Self.makeAttestationObject(aaguid: Data("appattestdevelop".utf8))
+        let production = Self.makeAttestationObject(aaguid: Data("appattest".utf8) + Data(repeating: 0, count: 7))
+        // The string one secondhand source claimed for development — must NOT
+        // be accepted as development just because it looks plausible.
+        let lookalike = Self.makeAttestationObject(aaguid: Data("appattestsandbox".utf8))
+
+        #expect(AttestationEnvironmentHint.environment(of: development) == .development)
+        #expect(AttestationEnvironmentHint.environment(of: production) == .production)
+        #expect(AttestationEnvironmentHint.environment(of: lookalike) == .unrecognised)
+        #expect(AttestationEnvironmentHint.environment(of: Data()) == .unrecognised)
     }
 
     @Test("Non-printable aaguid bytes render as dots in the ASCII column, not garbage or a crash")
@@ -360,5 +375,113 @@ struct HarnessSessionTests {
         ]
 
         #expect(session.outcomeLabel == "Attested")
+    }
+}
+
+// MARK: - ControllableTransport (Step control)
+//
+// The Simulator can never reach this code through the real flow —
+// `isSupported` is false there, so `ensureAttested()` ends before any
+// transport call. These pin the two behaviours a device session depends on
+// blindly: a pause really holds the request back, and a reset (which cancels
+// the flow and then WAITS for it) can never deadlock against a pause.
+
+@Suite("ControllableTransport")
+@MainActor
+struct ControllableTransportTests {
+
+    actor CountingTransport: AttestationTransport {
+        private(set) var challengeCalls = 0
+        private(set) var submitCalls = 0
+        func fetchChallenge() async throws -> Data { challengeCalls += 1; return Data([0x01]) }
+        func submitAttestation(_ request: AttestationSubmission) async throws -> String {
+            submitCalls += 1
+            return "uuid"
+        }
+    }
+
+    private static let submission = AttestationSubmission(keyId: "k", challenge: Data(), attestation: Data())
+
+    private func make() -> (ControllableTransport, CountingTransport, TransportGate) {
+        let base = CountingTransport()
+        let gate = TransportGate()
+        return (ControllableTransport(base: base, gate: gate, onEvent: { _ in }), base, gate)
+    }
+
+    private func waitUntilPaused(_ gate: TransportGate) async {
+        while gate.pausedAt == nil { await Task.yield() }
+    }
+
+    @Test("Pause before sending holds the request until released", .timeLimit(.minutes(1)))
+    func pauseBeforeHoldsRequest() async throws {
+        let (transport, base, gate) = make()
+        gate.challengeBehavior = .pauseBefore
+
+        let call = Task { try await transport.fetchChallenge() }
+        await waitUntilPaused(gate)
+        #expect(await base.challengeCalls == 0)
+
+        gate.release()
+        #expect(try await call.value == Data([0x01]))
+        #expect(await base.challengeCalls == 1)
+        #expect(gate.pausedAt == nil)
+    }
+
+    @Test("Pause after the response: the server was reached, the caller has not heard yet", .timeLimit(.minutes(1)))
+    func pauseAfterHoldsResponse() async throws {
+        let (transport, base, gate) = make()
+        gate.registerBehavior = .pauseAfter
+
+        let call = Task { try await transport.submitAttestation(Self.submission) }
+        await waitUntilPaused(gate)
+        #expect(await base.submitCalls == 1)
+
+        gate.release()
+        #expect(try await call.value == "uuid")
+    }
+
+    @Test("Cancelling a paused call releases it and sends nothing", .timeLimit(.minutes(1)))
+    func cancellationReleasesPause() async throws {
+        let (transport, base, gate) = make()
+        gate.registerBehavior = .pauseBefore
+
+        let call = Task { try await transport.submitAttestation(Self.submission) }
+        await waitUntilPaused(gate)
+        call.cancel()
+
+        await #expect(throws: CancellationError.self) { try await call.value }
+        #expect(await base.submitCalls == 0)
+        #expect(gate.pausedAt == nil)
+    }
+
+    @Test("Injected failures throw the error the coordinator branches on, without sending")
+    func injectedFailures() async throws {
+        let (transport, base, gate) = make()
+
+        gate.registerBehavior = .failChallengeExpired
+        await #expect(throws: AttestationError.challengeExpired) {
+            try await transport.submitAttestation(Self.submission)
+        }
+        // One-shot: a sticky "expired" would burn a new key per retry.
+        #expect(gate.registerBehavior == .pass)
+
+        gate.registerBehavior = .failRejected
+        await #expect(throws: AttestationError.self) {
+            try await transport.submitAttestation(Self.submission)
+        }
+        gate.challengeBehavior = .failNoConnection
+        await #expect(throws: URLError.self) { try await transport.fetchChallenge() }
+
+        #expect(await base.submitCalls == 0)
+        #expect(await base.challengeCalls == 0)
+    }
+
+    @Test("Lose the response: the request is really sent, then a network error is thrown")
+    func loseResponseSendsThenThrows() async throws {
+        let (transport, base, gate) = make()
+        gate.registerBehavior = .loseResponse
+
+        await #expect(throws: URLError.self) { try await transport.submitAttestation(Self.submission) }
+        #expect(await base.submitCalls == 1)
     }
 }

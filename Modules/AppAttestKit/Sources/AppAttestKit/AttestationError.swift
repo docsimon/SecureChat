@@ -36,7 +36,9 @@ public enum AttestationError: Error, Sendable, Equatable {
     /// Our server rejected the attestation. Terminal — a retry will not help.
     case serverRejected(String)
 
-    /// Cached attestation outlived its challenge. The other case where
+    /// Cached attestation outlived its challenge. Thrown by the app's
+    /// `AttestationTransport.submitAttestation` — the module cannot detect
+    /// this itself, only the server knows. The other case where
     /// regenerating a key is correct — in both this and `.keyInvalid`, the
     /// old key is genuinely unusable, not just slow or temporarily flaky.
     case challengeExpired

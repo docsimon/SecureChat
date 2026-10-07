@@ -110,47 +110,17 @@ public actor AttestationCoordinator: AssertionSigning {
         }
         let task = Task { try await run(binding: binding) }
         inFlight = task
-        defer { inFlight = nil }
+        // Only clear OUR task: `cancelInFlight()` may already have cleared it,
+        // and a newer call may have installed its own since.
+        defer { if inFlight == task { inFlight = nil } }
         return try await task.value
     }
 
     /// Restores state from disk without contacting Apple or the network.
     /// Call on launch to decide which screen to show.
     public func restore() async {
-        guard let keyId = (try? store.loadKeyId()) ?? nil else {
-            transition(to: .none)
-            return
-        }
-        // Order matters: check `attested` FIRST. A registered user must not be
-        // sent back through the flow — attesting a one-shot key a second time
-        // fails with .invalidKey, triggering a needless regeneration for a key
-        // that was never actually broken.
-        if (try? store.loadIsAttested()) == true {
-            transition(to: .attested(keyId: keyId))
-        } else if let cached = try? store.loadAttestation() {
-            transition(to: .attestationPending(keyId: keyId,
-                                               attestation: cached.object,
-                                               challenge: cached.challenge))
-        } else {
-            transition(to: .keyGenerated(keyId: keyId))
-        }
+        transition(to: persistedState())
     }
-
-    #if DEBUG
-    /// Harness only. Wipes persisted state so a full attestation can be re-run.
-    ///
-    /// ⚠️ Still spends a real `generateKey()` call on the next attestation —
-    /// nothing here makes Apple's side of this free, only this module's own
-    /// bookkeeping. Use the package's mock-based tests for iteration; use this
-    /// sparingly to confirm real-API behaviour.
-    ///
-    /// Compile-time gated, NOT a runtime flag — a runtime bypass that ships is a
-    /// bypass that gets found. See architecture doc §8.
-    public func debugReset() {
-        try? store.clear()
-        transition(to: .none)
-    }
-    #endif
 
     /// Call this — in production, not just tests — when the app observes
     /// `.keyInvalid` from `sign()`. That's the ONE way key invalidation can be
@@ -158,10 +128,20 @@ public actor AttestationCoordinator: AssertionSigning {
     /// or Keychain cleared independently of a fresh install), and without this
     /// method there is no way back: `sign()` deliberately doesn't self-heal
     /// ("keep this path thin" — module doc §3), and `ensureAttested()`'s own
-    /// persisted-flag check (`run()`, above) would keep trusting the stale
+    /// persisted-state check (`run()`, below) would keep trusting the stale
     /// `isAttested` record forever, since it exists specifically to avoid
-    /// re-attesting a key that's still fine. `debugReset()` can't fill this
-    /// gap either — it's compile-time removed from release builds.
+    /// re-attesting a key that's still fine.
+    ///
+    /// Also the way out of a registration the server has definitively
+    /// rejected: `.serverRejected` from `ensureAttested()` leaves the state at
+    /// `.attestationPending` (the module never discards a key on a server-side
+    /// "no" by itself), and calling this is the app's explicit decision to
+    /// give that key up and start over.
+    ///
+    /// Cancels and waits for any in-flight `ensureAttested()` first — without
+    /// that, a call sitting in its retry backoff would wake up into the
+    /// freshly-cleared state and run a whole new generate → attest → register
+    /// behind the caller's back. The cancelled call throws `CancellationError`.
     ///
     /// ⚠️ Confirmed on real hardware: a keyId orphaned by an app reinstall does
     /// NOT surface from `sign()` as `.keyInvalid` — it surfaces as
@@ -180,7 +160,8 @@ public actor AttestationCoordinator: AssertionSigning {
     /// not speculatively: each call wipes state and spends a real
     /// `generateKey()` on the next attestation, so calling it needlessly is
     /// still wasteful even without an enforced cap.
-    public func acknowledgeKeyInvalidation() {
+    public func acknowledgeKeyInvalidation() async {
+        await cancelInFlight()
         regenerateKey()
     }
 
@@ -204,17 +185,13 @@ public actor AttestationCoordinator: AssertionSigning {
     // MARK: Flow
 
     private func run(binding: @Sendable @escaping (Data) throws -> Data) async throws -> AttestationState {
-        if state.isAttested { return state }
-
         // Read the STORE, not just in-memory state. An app that calls
-        // ensureAttested() without restore() first would otherwise load the
-        // persisted keyId, skip generation, and re-attest a ONE-SHOT key —
-        // burning a key regeneration on every launch.
-        if (try? store.loadIsAttested()) == true,
-           let keyId = (try? store.loadKeyId()) ?? nil {
-            transition(to: .attested(keyId: keyId))
-            return state
-        }
+        // ensureAttested() without restore() first would otherwise skip
+        // straight past whatever a previous run persisted and re-attest a
+        // ONE-SHOT key — both for a fully registered key AND for one whose
+        // attestation is cached but not yet confirmed by the server.
+        if case .none = state { transition(to: persistedState()) }
+        if state.isAttested { return state }
 
         guard service.isSupported else {
             let error = AttestationError.unsupported
@@ -225,6 +202,9 @@ public actor AttestationCoordinator: AssertionSigning {
 
         var attempt = 0
         while attempt < policy.maxAttempts {
+            // Set by cancelInFlight(). Checked before each attempt so a
+            // cancelled call never starts another step.
+            try Task.checkCancellation()
             do {
                 return try await attemptRegistration(binding: binding)
             } catch let error as AttestationError where error.requiresNewKey {
@@ -242,7 +222,10 @@ public actor AttestationCoordinator: AssertionSigning {
                 // Retry with the SAME keyId. Never regenerate here.
                 attempt += 1
                 observer?.didFail(error, attempt: attempt)
-                try await Task.sleep(for: policy.backoff(attempt))
+                // No backoff after the final attempt — nothing follows it.
+                if attempt < policy.maxAttempts {
+                    try await Task.sleep(for: policy.backoff(attempt))
+                }
 
             } catch let error as AttestationError {
                 observer?.didFail(error, attempt: attempt)
@@ -269,10 +252,7 @@ public actor AttestationCoordinator: AssertionSigning {
     }
 
     /// STEPS 3–8: everything up to and including the Apple round trip and
-    /// persisting `.attestationPending` — but NOT `submit()`. Shared by
-    /// `attemptRegistration()` (which always continues straight on to
-    /// `submit()`, production's atomic one-call behavior, unchanged) and the
-    /// harness-only `attestOnly()` below (which deliberately stops here).
+    /// persisting `.attestationPending` — but NOT `submit()`.
     private func performAttestation(binding: @Sendable @escaping (Data) throws -> Data) async throws -> AttestationState {
         // STEP 3 — load before generate, ALWAYS.
         let keyId: String
@@ -299,11 +279,8 @@ public actor AttestationCoordinator: AssertionSigning {
             throw AttestationError.networkUnavailable
         }
 
-        // STEP 6 — the APP builds the binding. This is the step that makes the
-        // whole scheme work: the App Attest key signs over a hash CONTAINING the
-        // identity public key, letting the server conclude that this identity key
-        // came from a genuine app on real hardware. The module carries an opaque
-        // hash and never learns what is in it.
+        // STEP 6 — the APP builds the binding. The module carries an opaque
+        // hash and never learns what is in it (see `ensureAttested(binding:)`).
         let clientDataHash = try binding(challenge)
 
         // STEP 7 — ONE-SHOT. After this succeeds the key is assertion-only.
@@ -319,62 +296,6 @@ public actor AttestationCoordinator: AssertionSigning {
         return state
     }
 
-    #if DEBUG
-    /// Harness only. Runs STEPS 3–8 — generate-key-if-needed through the
-    /// Apple round trip and persisting `.attestationPending` — and stops
-    /// there, deliberately never calling `/register`. Lets a manual tester
-    /// control network/server conditions for as long as they want between
-    /// the Apple step and the registration step, instead of racing a
-    /// timing window. Call `ensureAttested()` afterward (same binding) to
-    /// run just the registration step: it detects `.attestationPending` and
-    /// jumps straight to `submit()`, skipping Apple entirely — the same
-    /// resume path crash recovery already relies on, just triggered on
-    /// purpose instead of by a relaunch.
-    ///
-    /// Single attempt, no internal retry loop — this exists for manual,
-    /// one-step-at-a-time control, not automated resilience (that's what
-    /// `ensureAttested()` is for). Idempotent: an already-attested or
-    /// already-pending state is returned as-is, no new work done.
-    ///
-    /// Compile-time gated, NOT a runtime flag — a runtime bypass that ships
-    /// is a bypass that gets found. See architecture doc §8.
-    public func attestOnly(
-        binding: @Sendable @escaping (Data) throws -> Data
-    ) async throws -> AttestationState {
-        if let existing = inFlight { return try await existing.value }
-        let task = Task { try await runAttestOnly(binding: binding) }
-        inFlight = task
-        defer { inFlight = nil }
-        return try await task.value
-    }
-
-    private func runAttestOnly(binding: @Sendable @escaping (Data) throws -> Data) async throws -> AttestationState {
-        if state.isAttested { return state }
-        if (try? store.loadIsAttested()) == true,
-           let keyId = (try? store.loadKeyId()) ?? nil {
-            transition(to: .attested(keyId: keyId))
-            return state
-        }
-        if case .attestationPending = state { return state }
-        guard service.isSupported else {
-            let error = AttestationError.unsupported
-            observer?.didFail(error, attempt: 0)
-            transition(to: .unsupported(error))
-            return state
-        }
-        do {
-            return try await performAttestation(binding: binding)
-        } catch let error as AttestationError where error.requiresNewKey {
-            regenerateKey()
-            observer?.didFail(error, attempt: 0)
-            throw error
-        } catch let error as AttestationError {
-            observer?.didFail(error, attempt: 0)
-            throw error
-        }
-    }
-    #endif
-
     private func submit(keyId: String, attestation: Data,
                         challenge: Data) async throws -> AttestationState {
         // STEP 9 — app-implemented transport.
@@ -388,9 +309,14 @@ public actor AttestationCoordinator: AssertionSigning {
             throw AttestationError.networkUnavailable
         }
 
-        // STEP 12 — clear the cache only AFTER the server confirms, and record
-        // that registration completed so a relaunch skips the flow entirely.
-        try? store.store(isAttested: true)
+        // STEP 12 — record that registration completed so a relaunch skips
+        // the flow entirely, THEN clear the cache. The flag write must not be
+        // swallowed: if it failed and the cache were cleared anyway, a
+        // relaunch would see "key generated, never attested", re-attest a
+        // one-shot key, and end up registering a brand-new account. Throwing
+        // here leaves `.attestationPending` intact, so the next call just
+        // resubmits and the server's idempotency returns the same account.
+        try store.store(isAttested: true)
         try? store.clearAttestation()
         transition(to: .attested(keyId: keyId))
         return state
@@ -406,7 +332,40 @@ public actor AttestationCoordinator: AssertionSigning {
         transition(to: .none)
     }
 
+    /// What the persisted data alone says the state is. Shared by `restore()`
+    /// and `run()` so a caller that skips `restore()` resumes identically.
+    private func persistedState() -> AttestationState {
+        guard let keyId = (try? store.loadKeyId()) ?? nil else { return .none }
+        // Order matters: check `attested` FIRST. A registered user must not be
+        // sent back through the flow — attesting a one-shot key a second time
+        // fails with .invalidKey, triggering a needless regeneration for a key
+        // that was never actually broken.
+        if (try? store.loadIsAttested()) == true {
+            return .attested(keyId: keyId)
+        }
+        if let cached = try? store.loadAttestation() {
+            return .attestationPending(keyId: keyId,
+                                       attestation: cached.object,
+                                       challenge: cached.challenge)
+        }
+        return .keyGenerated(keyId: keyId)
+    }
+
+    /// Cancels the in-flight `ensureAttested()`, if any, and waits for it to
+    /// unwind. A step already past its last suspension point (e.g. inside
+    /// `attestKey`) still completes; nothing new starts after it.
+    private func cancelInFlight() async {
+        while let task = inFlight {
+            task.cancel()
+            _ = try? await task.value
+            if inFlight == task { inFlight = nil }
+        }
+    }
+
+    /// No-op when the state is unchanged, so the observer sees each state
+    /// once — not once per retry-loop re-entry.
     private func transition(to newState: AttestationState) {
+        guard newState != state else { return }
         state = newState
         observer?.didTransition(to: newState)
     }

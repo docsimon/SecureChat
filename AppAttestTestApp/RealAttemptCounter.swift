@@ -14,14 +14,25 @@
 import Foundation
 import Security
 
-enum RealAttemptCounter {
-    private static let service = "com.securechat.appattesttestapp.counters"
-    private static let account = "realAttemptCount"
+///
+/// Two totals, because they are two different things and easy to conflate:
+/// `keysGenerated` counts `generateKey()` — local Secure Enclave work, no
+/// network — and `appleAttestations` counts successful `attestKey()` calls,
+/// the only step in registration that reaches Apple's servers. A flow that
+/// fails at /challenge spends a key but never an attestation.
+struct RealAttemptCounter {
+    /// Keeps the original Keychain account name so totals from earlier
+    /// installs carry over.
+    static let keysGenerated = RealAttemptCounter(account: "realAttemptCount")
+    static let appleAttestations = RealAttemptCounter(account: "appleAttestationCount")
 
-    static func load() -> Int {
+    private static let service = "com.securechat.appattesttestapp.counters"
+    private let account: String
+
+    func load() -> Int {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
@@ -36,20 +47,20 @@ enum RealAttemptCounter {
         return value
     }
 
-    static func increment() {
+    func increment() {
         let newValue = load() + 1
         let data = Data(String(newValue).utf8)
 
         let deleteQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: account
         ]
         SecItemDelete(deleteQuery as CFDictionary)
 
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly

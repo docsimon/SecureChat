@@ -13,7 +13,8 @@ again. The per-error detail lives in `attestation-error-state-table.md`.
    App Attest. See "Development-environment safeguards" below.
 3. **The harness runs the code that ships.** Anything both apps need lives in a
    package both compile, never copied into the harness.
-4. **Each main feature gets its own harness app target.** Pairing is next.
+4. **Each main feature gets its own harness app target.** Pairing has
+   `PairingTestApp` (see `pairing-workflow.md`).
 5. **Rare failures are ignored on purpose**, but written down (the error table's
    "Known and accepted" section).
 
@@ -40,11 +41,13 @@ table; there is no migration.
 | Registration against Apple + local Auth Server, the ordinary failures (no network, server 5xx, app killed, `attestKey` hanging offline), reinstall purge | Observed on a phone with the harness on 2026-10-06/07 and 2026-10-12 — **before** the transport and purge moved into `RegistrationKit`. |
 | Rows 0, 8a, 9, 10, 16, 20 of the error table (storage failures, one-replacement limit, `invalidInput` on `attestKey`, `featureUnsupported` from a call, reset during a hung Apple call) | Unit tests with mocks only. Never seen on a phone. |
 | `RegistrationKit` | 4 unit tests (first-launch gate only). The transport's encoding and error mapping have no automated test. |
-| Harness after the refactor | Unit tests pass; **not yet run on a phone.** |
+| Harness after the refactor | Unit tests pass; run on a phone on 2026-10-12 (Register, relaunch, session). |
 | SecureChat registration screen | 7 unit tests pass; start screen and the Debug skip checked in the Simulator. The real "registered" and "failed" paths have never run: the Simulator can only reach "unsupported". |
-| Auth Server bundle-id list | 4 unit tests pass. **Container not rebuilt** with the change. |
+| Auth Server bundle-id list | 4 unit tests pass; the harness registered against it on 2026-10-12. Never exercised with SecureChat's bundle id. |
 
 ## Blockers before Registration is closed
+
+**Registration was closed by the user on 2026-10-12.** Kept as a record.
 
 1. **Done 2026-10-12 — `RegistrationViewModelTests` cannot run on a phone.**
    They write to and clear the real Keychain, which on a registered phone
@@ -60,20 +63,15 @@ table; there is no migration.
    id is created and the Auth Server does not know the device, so anything
    pairing needs from the server needs a development-only path there too.
    Decide that as part of pairing.
-3. **One pass of the harness on the phone with the refactored code.** Delete
-   the harness from the phone first (the identity key's Keychain name
-   changed; the old item is orphaned). Rebuild the server
-   (`docker compose up -d --build` in `AuthServer/`), check the Mac's address
-   against `AuthServerConfig.swift` (`ipconfig getifaddr en0`), then:
-   Register → relaunch → open a session. Costs one key.
-4. **Open the project in Xcode once.** `project.pbxproj` was edited by hand to
-   add `RegistrationKit` to both targets and `Debug-Info.plist` to SecureChat's
-   Debug configuration. It builds from the command line; the Xcode UI has not
-   been checked.
-5. **Commit.** Everything from 2026-10-12 is uncommitted. Suggested split:
-   module fixes (`Modules/AppAttestKit`, error table) · package extraction
-   (`Modules/RegistrationKit`, harness, project file) · server (`AuthServer`) ·
-   app (`SecureChat`, `SecureChatTests`, script).
+3. **Done 2026-10-12 — the harness ran on the phone with the refactored
+   code** (fresh install; Register, relaunch, open a session) and the user
+   reported it went fine. Rows 0, 8a, 9, 10, 16 and 20 of the error table
+   were not provoked and remain mock-tested only.
+4. **Partly covered.** The hand-edited `project.pbxproj` opened in Xcode and
+   built the harness for the phone. The SecureChat target's settings
+   (`RegistrationKit` linked, `Debug-Info.plist` on Debug) were not looked at
+   in the Xcode UI; they build from the command line.
+5. **Done 2026-10-12 — committed** as `2d8c5d4` (one commit).
 
 ## Development-environment safeguards
 

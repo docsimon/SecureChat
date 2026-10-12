@@ -10,7 +10,7 @@ Status: pre-launch, no live users. Last updated 2026-09-21.
 
 Privacy-focused iOS chat app. Core constraints, treated as fixed:
 
-- **Manual pairing only** — BLE or NFC for v1 (a shared-link method was considered and deferred — see `pairing-workflow.md`). No discovery, no directory, no username search.
+- **Manual pairing only** — in person, each phone scanning the other's QR code (revised 2026-10-12; BLE/NFC dropped, pairing at a distance deferred — see `pairing-workflow.md`). No discovery, no directory, no username search.
 - **No server-side message storage.** Messages exist in transit and on the two devices, nowhere else.
 - **Both parties must be online.** No offline delivery, no store-and-forward.
 - **Local storage encrypted.**
@@ -152,7 +152,7 @@ Reserve permanent bans for behaviour you would testify about in court. Prefer te
 
 X3DH exists to enable asynchronous session setup against an untrusted key server. This product requires both parties online and exchanges identity keys over a physically authenticated channel (BLE/NFC/link), so the MITM problem is solved by proximity rather than by prekey bundles and safety-number verification.
 
-**Use the Noise Protocol Framework instead** — pattern `XX` for initial pairing, `KK` post-pairing when both static keys are already known. Far less code than X3DH for a formally analysed handshake.
+**Use the Noise Protocol Framework instead** — pattern `KK`, since both static keys are already known once two phones have scanned each other. (Revised 2026-10-12: `XX` was for the BLE pairing handshake, which no longer exists — see `pairing-workflow.md`.) Far less code than X3DH for a formally analysed handshake.
 
 ### Double Ratchet: keep it
 
@@ -328,6 +328,8 @@ With these, swapping in a derived rendezvous ID later is a client-side change pl
 
 ### Pairing channel
 
+**Revised 2026-10-12: v1 pairs by mutual QR scan, in person.** There is no radio channel to relay and the camera reads the whole identity key, so the SAS below is not used in v1. What takes its place as the rule to hold: the app accepts sessions only from stored contacts, because the code is static and can be photographed. See `pairing-workflow.md`. The rest of this subsection is kept for the deferred pairing-at-a-distance design, where it applies again.
+
 Proximity is not authentication. BLE relay attacks are practical — an attacker with two radios can relay handshake traffic between two victims who each believe they're pairing directly with each other, completing two independently valid handshakes with the attacker in the middle. This is why SAS confirmation (below) applies to BLE/NFC pairing itself, not just to the shared-link method that was deferred.
 
 **Mitigation: short authentication string (SAS).** After the handshake, derive a few words or emoji from both parties' identity keys and have both users compare them out of band (read aloud, or eyes on both screens). Defeats MITM even against a fully compromised server or a relayed BLE/NFC connection — this is what makes "the server cannot lie about identities" true rather than aspirational. Full protocol, including the commitment-ordering requirement this needs to be secure against an adaptive attacker, in `pairing-workflow.md`.
@@ -379,7 +381,7 @@ A server compromise yields: future metadata, IP correlation, and the ability to 
 |---|---|
 | Registration method | App Attest. Phone OTP and email OTP rejected. |
 | DeviceCheck | Query wired in, no bits written. Revisit only if real abuse appears. |
-| Key agreement | X25519 + Noise (`XX` pairing, `KK` thereafter). X3DH rejected as unnecessary. |
+| Key agreement | X25519 + Noise `KK`. `XX` dropped with BLE pairing (2026-10-12). X3DH rejected as unnecessary. |
 | Per-message crypto | Double Ratchet, `MAX_SKIP` capped |
 | Wire format | Fixed 8,320-byte frames, padded inside encryption, version byte + type field |
 | Message cap | 2,000 grapheme clusters (UX-driven, not cost-driven) |
@@ -392,7 +394,7 @@ A server compromise yields: future metadata, IP correlation, and the ability to 
 | Abuse handling | Client-side unpair/block is the primary remedy, not server bans |
 | Re-attestation on `.keyInvalid` | Rejected. A new App Attest key always mints a new account rather than rebinding the old one — the alternative would require the server to retain `identityPublicKey` indefinitely as a lookup key, reversing the "discard it after registration" decision above. See `appattestkit-module-design.md` §8, `account-keys-reference.md`. |
 | Identity key on `.keyInvalid` (v1) | **Revised.** Originally kept across re-registration for trust continuity; reversed to always wipe it together with the module's own state, to ship v1 faster with a smaller invalidation state space (one path to test, not two). Clean to reverse later — no server or schema coupling. Triggered proactively at launch via a `UserDefaults` first-launch flag (not just reactively on a failed `sign()`), so the UI is never left showing a stale "attested" status after a reinstall. See `appattestkit-module-design.md` §8. |
-| Pairing transport | BLE/NFC only for v1; shared-link pairing considered and deferred (no rendezvous infrastructure needed). SAS confirmation is a hard gate, not a soft "unverified" warning. Default display name reuses the identicon word-triple. See `pairing-workflow.md`. |
+| Pairing transport | **Revised 2026-10-12.** In-person mutual QR scan for v1: each phone shows `{identityPublicKey, accountUUID, displayName}` and scans the other's. No server, no radio, no handshake, no SAS. Replaces BLE/NFC + Noise `XX` + SAS: NFC is not available between two iPhones, and the SAS as specified was breakable without a commit-reveal step. Pairing at a distance (code or link sent through another app) discussed and deferred. Default display name reuses the identicon word-triple (not built). See `pairing-workflow.md`. |
 | Auth server stack | Kotlin/JVM + Ktor, using `veehaitch/devicecheck-appattest` for attestation/assertion verification. Chosen over Go/Node alternatives, which are fragmented across several small, low-visibility projects with no clear leader; this library is a single well-tested implementation on Maven Central built on Bouncy Castle + Jackson rather than hand-rolled parsing. See `AuthServer/README.md`. |
 | `clientDataHash` composition | **Revised.** `SHA256(challenge)` alone, not `SHA256(challenge ‖ identityPublicKey)`. The chosen verification library computes `clientDataHash` internally with no override seam; forking it to change one hash was judged worse than moving the identity binding server-side. `/challenge` now takes `identityPublicKey` and stores the association (single-use), checked at `/register`. Trade-off: the binding now depends on TLS integrity for those two calls rather than being provable independent of transport. See `account-keys-reference.md`. |
 | Local regeneration cap on key invalidation | **Removed.** `Policy.maxKeyRegenerations` (3, Keychain-persisted, survived reinstall) was a self-imposed defense against an assumed Apple-side "device lifetime key budget" — checked against Apple's actual documentation and found unverified: no published per-device `generateKey()` count exists; what is documented is a per-second rate limit and a fraud/risk metric, not a hard cutoff. The Secure Enclave has its own abuse defenses this module has no business duplicating. In practice the cap's only confirmed effect was false "exhausted" failures during ordinary reinstall-heavy testing, with no recovery path in a shipping build. `Policy.maxAttempts` (unchanged) still bounds any single `ensureAttested()` call. See `appattestkit-module-design.md` §8a. |

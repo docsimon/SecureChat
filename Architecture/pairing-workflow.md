@@ -1,175 +1,210 @@
-# Pairing workflow — BLE / NFC
+# Pairing workflow — in-person QR, mutual scan
 
-Step-by-step, with explicit ownership at every step. Companion to
-`architecture-decisions.md` (product/protocol, §1 and §10) and
-`account-keys-reference.md` (what the identity key is and why it's the
-thing exchanged here).
+Rewritten 2026-10-12. The earlier design (BLE/NFC channel, Noise `XX`
+handshake, SAS word comparison) is replaced; the reasons are in "Why the
+earlier design was dropped" at the end. Companion to
+`architecture-decisions.md` (§1 and §10) and `account-keys-reference.md`
+(what the identity key is).
 
-**Ownership rule:** this flow has no module and no server. `AppAttestKit`'s
-boundary stops at registration/assertion (`appattestkit-module-design.md`
-§2) and never touches pairing — everything below is app-owned.
+**v1 covers in-person pairing only**: two people, two phones, each scans the
+other's screen. Pairing at a distance (sending a code or link through another
+app) was discussed and deferred; see the closing notes.
 
-v1 covers **BLE and NFC only**. A shared-link method was considered and
-deferred — see the note at the end of this doc.
+**Ownership:** no server takes part at any step, and `AppAttestKit` is not
+involved. The shared code is the `PairingKit` package (`Modules/PairingKit`),
+compiled by both the real app and the `PairingTestApp` harness. Storing the
+contact and the screens are app-owned.
 
 ---
 
 ## Overview
 
-| # | Step | Owner | Touches |
+| # | Step | Owner | Code |
 |---|---|---|---|
-| 1 | Establish a raw bidirectional channel | App | BLE / NFC |
-| 2 | Run Noise `XX` handshake | App | Identity keypair |
-| 3 | Exchange `account_uuid` + display name | App | Local account state |
-| 4 | Compute SAS locally, both sides | App | Both identity public keys |
-| 5 | User confirms SAS match (hard gate) | User, via app UI | — |
-| 6 | Persist the contact record | App | Local contact store |
+| 1 | Each phone shows its own code | App | `PairingPayload.encoded()`, `PairingQRCode.image(for:)` |
+| 2 | Each phone scans the other's code | User, camera | `QRCodeScannerView` |
+| 3 | The scanned code is checked | `PairingKit` | `Pairing.evaluate(...)` |
+| 4 | The contact is stored | App | `PairedContact` |
+| 5 | The first session confirms the pairing | App (not built) | Noise `KK` |
 
-No server involvement at any step — the main benefit of dropping
-link-based pairing for v1, see the closing note.
+Steps 1–4 happen independently on each phone. There is no channel between
+the two phones during pairing: the screen and the camera are the channel.
 
 ---
 
-### Step 1 — Establish a raw channel (App)
+### Step 1 — Show the code
 
-BLE or NFC connects the two devices directly. This step's only job is
-producing a bidirectional byte stream — no cryptographic or identity
-information is exchanged yet. Everything from step 2 onward is **identical
-regardless of which transport established the channel**; one pairing
-implementation runs on top of either.
-
-### Step 2 — Noise `XX` handshake (App)
+The code carries three things, none of them secret:
 
 ```
-→ e
-← e, ee, s, es
-→ s, se
+{ identityPublicKey, accountUUID, displayName }
 ```
 
-Both parties' X25519 identity static public keys are exchanged as an
-inherent part of this pattern (architecture doc §4) — there is no separate
-"send identity key" step. By the end of message 3, both sides hold the
-peer's `identityPublicKey` and a shared, encrypted channel for everything
-that follows.
+- **`identityPublicKey`** — the X25519 identity key. This is the thing being
+  verified: the other user's camera reads it straight off this screen.
+- **`accountUUID`** — the routing address. There is no directory, so this is
+  the only way a contact ever learns where to reach you.
+- **`displayName`** — always present, at most 64 bytes of UTF-8. A label, not
+  an identifier; the receiving side may rename the contact locally.
 
-No application data (`account_uuid`, display name) rides inside the
-handshake's own payload fields. Reasoning: exactly which handshake
-message's payload is authenticated by what, at that point in the pattern,
-is a detail worth verifying against the Noise spec before relying on —
-and this project consistently favours the boring, independently-verifiable
-choice over shaving one round trip (X3DH rejected, hand-rolled ASN.1
-rejected, ad hoc key reuse across primitives rejected elsewhere in these
-docs). One extra message, for a one-time pairing event, costs nothing.
-
-### Step 3 — Exchange `account_uuid` + display name (App)
-
-First message on the now-encrypted channel, both directions:
+Wire form, version 1:
 
 ```
-{ accountUUID, displayName }
+text   "SCPAIR:" + base64url(bytes), no padding
+bytes  [version = 1][identityPublicKey 32][accountUUID 16][nameLength 1][name 1…64]
 ```
 
-- **`accountUUID`** — required, always sent. This is the *only* way a
-  contact ever learns your routing address — there is no discovery or
-  directory (architecture doc §1) — so this exchange is the sole mechanism
-  by which future messages can reach you at all.
-- **`displayName`** — always sent, never optional. Defaults to the same
-  word-triple already used for the identicon/SAS (architecture doc §7,
-  e.g. `otter-canyon-4417`) if the user hasn't set a custom nickname. This
-  costs no new generation logic, and keeps a useful property: since the
-  identity key survives a `.keyInvalid` reset (`appattestkit-module-design.md`
-  §8), the default name stays identical across that event too — one less
-  thing that looks different to a contact re-pairing afterward. The
-  receiving side may override it locally at any time — it's a label, not
-  an identifier (architecture doc §7).
+The code is static: the same identity always produces the same code (for the
+same name). It is about 160 characters.
 
-### Step 4 — Compute the SAS (App, both sides independently)
+### Step 2 — Scan
 
-```
-SAS = wordlist(HASH(sort(identityPubkeyA, identityPubkeyB)))
-```
+`QRCodeScannerView` is a bare camera preview that reports the text of any QR
+code it sees. The app needs the camera permission
+(`NSCameraUsageDescription`), the only permission pairing adds.
 
-No network round trip — both devices already hold both public keys from
-step 2. Sorting the two keys before hashing ensures both sides compute the
-same input regardless of which device initiated.
+### Step 3 — Check the scanned code
 
-⚠️ **The ordering matters for security, not just for correctness.** A SAS
-derived naively, before both sides have committed to their contribution, is
-vulnerable to an attacker adaptively searching for a colliding short string
-— a few words is a small space (tens of bits, not hundreds). Protocols like
-ZRTP close this with a commitment step: one side sends a hash of its
-contribution before the other reveals theirs, so neither can choose a key
-after seeing what value it would need to hit. **Verify this ordering
-against a reference design (ZRTP) before implementing** — this is the same
-category of risk as the `DCError` mapping and XEdDSA-reuse cautions
-elsewhere in these docs: looks fine until tested against an active
-attacker.
+`Pairing.evaluate` is a pure function of the scanned text, this device's own
+identity, and the stored contacts.
 
-### Step 5 — User confirms the match (User, hard gate)
+| Scanned code | Result |
+|---|---|
+| Not ours (a URL, a Wi-Fi code) | refused, `notAPairingCode` |
+| Ours, newer version | refused, `unsupportedVersion` |
+| Damaged, wrong length, trailing bytes, name empty or not UTF-8 | refused, `malformed` |
+| All-zero key | refused, `invalidIdentityKey` |
+| Our own key or our own account id | refused, `ownCode` |
+| Key and account id both unknown | **new contact** |
+| Same key **and** same account id as a stored contact | **already paired**; nothing changes, not even the name |
+| Known key with a different account id, or the reverse | refused, `conflictsWithExistingContact` |
 
-Both devices display the SAS. **The contact is not usable for messaging
-until both users explicitly confirm the values match** — not a soft
-"unverified" warning attached to an already-usable contact.
+The last row: under the v1 rules a reinstall replaces the identity key and
+the account id together (`appattestkit-module-design.md` §8), so one changing
+without the other is never a legitimate re-pairing.
 
-Reasoning: this happens once per contact, the friction cost of one
-confirmation tap is low, and "unverified" badges are a well-worn UX failure
-mode users learn to dismiss (mixed-content warnings, safety-number-change
-notices people click past). Given confidentiality is the entire product
-promise, enforcing it at the moment it's cheapest — both devices already
-physically together — is worth the tap.
+The scanned name is cleaned before use (control characters and line breaks
+removed, trimmed, cut to 64 bytes): it is text chosen by someone else that
+ends up in our UI.
 
-If the values don't match: abort pairing entirely, do not save a partial
-contact record.
-
-### Step 6 — Persist the contact record (App)
-
-Only after step 5 confirms:
+### Step 4 — Store the contact
 
 ```
 { identityPublicKey, accountUUID, displayName, pairedAt }
 ```
 
+Stored by the app. A refused scan stores nothing.
+
+### Step 5 — The first session confirms the pairing (not built)
+
+Because both sides already hold each other's static key, the first chat
+session can use Noise `KK` directly; the `XX` handshake is no longer needed
+anywhere. That first successful `KK` session is also what proves the two
+things a scan cannot (next section).
+
 ---
 
-## Why BLE/NFC-only removes a whole class of problem
+## What a scan does not prove
 
-Both transports require physical proximity to establish the channel at all
-(step 1), and — critically — **step 1 has no server dependency**. A
-shared-link method would have needed the relay server to broker a
-rendezvous between two devices that aren't physically together (since
-"both parties must be online" still applies regardless of transport,
-architecture doc §1) — an ephemeral "connect these two sockets" primitive
-on the relay, plus link-specific protections: single-use TTL, high
-entropy, key material kept out of the URL path and in the fragment so it
-never reaches server logs.
+1. **That they scanned you back.** A scans B, B never scans A: A holds a
+   contact that B does not have. Until the first session succeeds the contact
+   is "waiting for them to scan you". How this is shown is a UX decision; the
+   contact record has no status field yet.
+2. **That they hold the private key.** Anyone can display a code built from
+   someone else's public key. Such a contact simply never completes a
+   session. Nothing is leaked, because nothing is sent to a contact outside
+   a `KK` session.
 
-None of that is needed for v1. It's deferred, not discarded — if a
-link-based method is added later, that mitigation list is the starting
-point, and everything from step 2 onward in this doc is reused unchanged.
-The whole point of decoupling "establish a channel" (step 1) from "what
-runs over it" (steps 2–6) is that adding a transport later never touches
-the protocol.
+## Rules the rest of the app must follow
 
-## Failure paths not yet designed
+- **Accept sessions only from stored contacts.** The code is static and can
+  be photographed. A stranger who captures it learns the identity public key
+  and the account id; they cannot impersonate the owner without the private
+  key, and they must not be able to reach the owner either. This is the rule
+  that makes a photographed code harmless, so it belongs to the session
+  design.
+- **Never treat `displayName` as identity.** Two contacts may carry the same
+  name. The key is the identity.
 
-- Connection drops mid-handshake (BLE range, NFC tap too brief) — retry
-  policy not yet specified.
-- Duplicate pairing attempt with an already-paired identity key — behaviour
-  not yet specified (overwrite the existing contact record? reject? merge?).
-  Only reachable today by re-pairing the same still-valid identity twice by
-  mistake, since a reinstall now always produces a fresh identity
-  (`appattestkit-module-design.md` §8) — this can never fire automatically
-  from a contact's reinstall the way it originally could.
-- **Manual contact merge (v2, open question — architecture doc §11).** A
-  contact who reinstalls arrives with a genuinely different
-  `identityPublicKey` — nothing in this pairing flow can detect "this is the
-  same person as an existing contact," because the cryptographic link that
-  would let it do so no longer exists after step 2's handshake. Any merge
-  has to be a user-initiated, socially-verified action (e.g. "merge with
-  existing contact…" on the new contact's screen), not something this
-  protocol can offer automatically. Not designed yet: the UI entry point,
-  what gets preserved (nickname, history) versus what can't be (the old
-  session's Double Ratchet state, gone regardless), and whether SAS
-  verification should still be mandatory even when merging (yes, almost
-  certainly — a merge claim is exactly the kind of thing a MITM would want
-  you to accept uncritically).
+## Why this is safe against a man in the middle
+
+The old design needed the SAS because Bluetooth can be relayed: two victims
+each complete a handshake with an attacker standing between them. Here there
+is nothing to relay. Each user points a camera at the other user's screen,
+and what is read is the full 32-byte key, not a short string derived from
+it. An attacker would have to replace what is on the screen.
+
+## Development and testing
+
+- **`PairingTestApp`** (bundle id `com.wapdir.simone.PairingTestApp`) is the
+  harness. It uses a throwaway identity (a random public key and a random
+  account id in `UserDefaults`), never `RegistrationKit`, so it cannot reach
+  App Attest or the Auth Server.
+- **The Simulator has no camera.** The harness has "Copy code as text" and a
+  paste field, so two Simulators, or a Simulator and a phone, can pair. A
+  phone can also scan the code off a Simulator window on the Mac.
+- **Face-to-face prototype (2026-10-12, untested on phones).** The harness
+  has "Pair face to face (front camera)": it shows this device's code and
+  scans with the front camera at once, so two phones held facing each other
+  read each other in one gesture. Success is a vibration and a sound; the
+  time to read is written to the harness log. The open question is whether
+  front cameras, fixed-focus on older phones, read the code reliably at
+  15–30 cm. If they do, the next step is an "I have yours" marker added to
+  the code after a successful read, which would let both phones know the
+  pairing is mutual.
+- **`PairingKit` tests:** `xcodebuild test -scheme PairingKit` in
+  `Modules/PairingKit`, against an iOS Simulator (17 tests).
+- **Debug builds of SecureChat skip registration**
+  (`registration-status.md`, blocker 2), so they have no identity key and no
+  account id to put in a code. Integrating pairing into SecureChat needs a
+  Debug-only local identity. No server path is needed for it, since pairing
+  never contacts a server.
+
+## Not done yet
+
+- **The pairing screen in SecureChat** and its UX (how showing and scanning
+  are arranged so the two scans feel like one action). `PairingKit` is not
+  linked into the SecureChat target yet.
+- **Contact storage in SecureChat.** The existing `guests` table has no
+  column for a key or an account id.
+- **The "waiting for them to scan you" state**, and what ends it.
+- **Default display name.** The docs propose the identicon word-triple
+  (`otter-canyon-4417`, `architecture-decisions.md` §7); no wordlist exists
+  yet. The harness uses "Harness 1234".
+- **Removing a contact / blocking** (`architecture-decisions.md` §12, abuse
+  handling).
+- **Manual contact merge (v2)**, unchanged from before: a contact who
+  reinstalls arrives with a new key and a new account id and is a stranger
+  to this flow. Any merge is a user-asserted claim, never something pairing
+  can detect.
+
+## Why the earlier design was dropped
+
+- **NFC is not available.** Core NFC only reads tags; an iPhone cannot act
+  as one for another iPhone without Apple's gated card-emulation APIs
+  (commercial agreement, payment-oriented).
+- **BLE needed everything else**: CoreBluetooth, a Noise `XX` handshake, and
+  a SAS comparison.
+- **The SAS as specified was breakable.** `HASH(sort(keyA, keyB))` over
+  long-lived keys lets a relay attacker try keys offline until the short
+  strings collide. The fix (commit-reveal with fresh random values) was
+  understood but adds three messages and more to test.
+- **Mutual scan needs none of it**, and verifies the whole key instead of a
+  short string. It is also what Threema does in person.
+
+## Deferred: pairing at a distance
+
+Discussed on 2026-10-12, not designed. Recorded so it does not have to be
+rediscovered:
+
+- One scan (or one link) is possible if the relay carries the reply: the
+  code adds a single-use secret, and the other side completes a
+  pre-shared-key Noise handshake (`IKpsk2`-style) through the relay.
+- A code sent through email or another chat app is a bearer token: whoever
+  uses it first is paired. It cannot be bound to a person, because their key
+  is not known yet. Single use, expiry and an approval prompt limit this but
+  do not close it.
+- Security then rests on the channel the code travelled through, so a word
+  comparison over a second channel (a call) comes back, with commit-reveal.
+- The app cannot tell an in-person scan from a forwarded screenshot.
+- It makes the relay a requirement for pairing.

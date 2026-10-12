@@ -10,6 +10,8 @@
 		CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = CA70F2A42EA3BEAA0098F0F9 /* SQLite */; };
 		CABD5C8D30442E240041D0B0 /* AppAttestKit in Frameworks */ = {isa = PBXBuildFile; productRef = CABD5C8C30442E240041D0B0 /* AppAttestKit */; };
 		CABD5C8E30442E240041D0B1 /* AppAttestKit in Frameworks */ = {isa = PBXBuildFile; productRef = CABD5C8C30442E240041D0B0 /* AppAttestKit */; };
+		CAD0A0023100000000A1B2C3 /* RegistrationKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAD0A0013100000000A1B2C3 /* RegistrationKit */; };
+		CAD0A0033100000000A1B2C3 /* RegistrationKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAD0A0013100000000A1B2C3 /* RegistrationKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,11 +62,21 @@
 			);
 			target = CA3468F93049D39200C50190 /* AppAttestTestApp */;
 		};
+		CAD0A0043100000000A1B2C3 /* Exceptions for "SecureChat" folder in "SecureChat" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Debug-Info.plist",
+			);
+			target = CA25060F2E8D7367004381A3 /* SecureChat */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CA2506122E8D7367004381A3 /* SecureChat */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CAD0A0043100000000A1B2C3 /* Exceptions for "SecureChat" folder in "SecureChat" target */,
+			);
 			path = SecureChat;
 			sourceTree = "<group>";
 		};
@@ -109,6 +121,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CABD5C8D30442E240041D0B0 /* AppAttestKit in Frameworks */,
+				CAD0A0023100000000A1B2C3 /* RegistrationKit in Frameworks */,
 				CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -132,6 +145,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CABD5C8E30442E240041D0B1 /* AppAttestKit in Frameworks */,
+				CAD0A0033100000000A1B2C3 /* RegistrationKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -210,6 +224,7 @@
 			packageProductDependencies = (
 				CA70F2A42EA3BEAA0098F0F9 /* SQLite */,
 				CABD5C8C30442E240041D0B0 /* AppAttestKit */,
+				CAD0A0013100000000A1B2C3 /* RegistrationKit */,
 			);
 			productName = SecureChat;
 			productReference = CA2506102E8D7367004381A3 /* SecureChat.app */;
@@ -279,6 +294,7 @@
 			name = AppAttestTestApp;
 			packageProductDependencies = (
 				CABD5C8C30442E240041D0B0 /* AppAttestKit */,
+				CAD0A0013100000000A1B2C3 /* RegistrationKit */,
 			);
 			productName = AppAttestTestApp;
 			productReference = CA3468FA3049D39300C50190 /* AppAttestTestApp.app */;
@@ -638,6 +654,7 @@
 				DEVELOPMENT_TEAM = PZH5BJLYFE;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SecureChat/Debug-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -1007,6 +1024,10 @@
 		CABD5C8C30442E240041D0B0 /* AppAttestKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AppAttestKit;
+		};
+		CAD0A0013100000000A1B2C3 /* RegistrationKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RegistrationKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -22,6 +22,7 @@
 import Foundation
 import CryptoKit
 import AppAttestKit
+import RegistrationKit
 
 @Observable @MainActor
 final class HarnessFlowModel {
@@ -155,7 +156,8 @@ final class HarnessFlowModel {
             identityPublicKeyPrefix = key.publicKey.rawRepresentation.prefix(4)
                 .map { String(format: "%02x", $0) }.joined()
         }
-        await coordinator.restore()
+        // A failed read is already logged by resolveCoordinator().
+        try? await coordinator.restore()
         let state = await coordinator.currentState
         moduleState = state
         guard identityGenerated || state != .none else { return }
@@ -189,32 +191,9 @@ final class HarnessFlowModel {
         }
         let task = Task {
             await self.firstLaunchGate.runIfNeeded {
-                // Conditional on purge is required, not optional: a genuine
-                // first-ever install ALSO has this flag absent, with nothing
-                // in Keychain to purge. Calling acknowledgeKeyInvalidation()
-                // unconditionally here would spend a real generateKey() call
-                // on a brand-new user's first launch for nothing.
-                let hadIdentity = IdentityKeyStore.exists()
-                if hadIdentity {
-                    IdentityKeyStore.delete()
-                }
-                await coordinator.restore()
-                let hadModuleState = await coordinator.currentState != .none
-                if hadModuleState {
-                    // Always succeeds now — no regeneration cap to exhaust.
-                    // (Earlier revisions could fail here and needed a
-                    // harness-only debug-reset fallback; removed along with
-                    // the cap itself, see account-keys-reference.md.)
-                    await coordinator.acknowledgeKeyInvalidation()
-                }
-                if hadIdentity || hadModuleState {
-                    // Stale from whatever registration this Keychain state
-                    // belonged to — a reinstall guarantees the NEXT
-                    // registration (if any) will mint a different
-                    // account_uuid (v1: no re-attestation), so keeping the
-                    // old one around would let sign() try to open a session
-                    // for an account this device can no longer prove it owns.
-                    RegisteredAccountStore.current = nil
+                // The purge itself is the app's own (RegistrationKit) — the
+                // harness only reports what it did.
+                if await Registration.purgeStaleInstallState(coordinator: coordinator) {
                     self.log(.identityKeyDeleted,
                              summary: "first launch after install/reinstall — purged stale Keychain state from a previous install")
                     self.startNewSession()
@@ -261,14 +240,7 @@ final class HarnessFlowModel {
         let coordinator = await resolveCoordinator()
         log(.attestationStarted, summary: "ensureAttested() called — starting from \(await coordinator.currentState.label)")
         do {
-            // clientDataHash = SHA256(challenge) alone, NOT SHA256(challenge +
-            // identityPublicKey): the server's verification library fixes
-            // this formula, so the identity binding lives server-side (the
-            // challenge is issued bound to an identityPublicKey and checked
-            // back at /register — see RealAttestationTransport.swift).
-            let result = try await coordinator.ensureAttested { challenge in
-                Data(SHA256.hash(data: challenge))
-            }
+            let result = try await coordinator.ensureAttested(binding: Registration.clientDataHash)
             if !result.isAttested {
                 log(.attestationFailed, summary: "ended in state: \(result.label)", isError: true)
             }
@@ -416,17 +388,17 @@ final class HarnessFlowModel {
             })
         let coordinator = AttestationCoordinator(transport: transport, observer: observer)
         self.coordinator = coordinator
-        await coordinator.restore()
+        do {
+            try await coordinator.restore()
+        } catch {
+            // Saved state unreadable (device locked). NOT the same as "no
+            // state": say so rather than show a blank module.
+            log(.attestationFailed, summary: "could not read saved attestation state — \(error)", isError: true)
+        }
         return coordinator
     }
 
     private func makeTransport() -> AttestationTransport {
-        // Never creates: a key that vanished mid-flow must surface as a
-        // server-side rejection, not be silently replaced by a new identity.
-        let identityPublicKeyBase64: @Sendable () -> String = {
-            guard let key = (try? IdentityKeyStore.loadExisting()) ?? nil else { return "" }
-            return key.publicKey.rawRepresentation.base64EncodedString()
-        }
         let onEvent: @Sendable (TransportEvent) -> Void = { [weak self] event in
             Task { @MainActor in self?.handleTransportEvent(event) }
         }
@@ -435,21 +407,21 @@ final class HarnessFlowModel {
         case .mock:
             base = LocalFakeTransport(onEvent: onEvent)
         case .localDocker, .custom:
-            base = RealAttestationTransport(
-                baseURL: currentBaseURL(),
-                identityPublicKeyBase64: identityPublicKeyBase64,
-                onEvent: onEvent)
+            base = RealAttestationTransport(baseURL: currentBaseURL(), onEvent: onEvent)
         }
         // Every backend goes through Step control — with both endpoints on
         // "Pass through" it is a plain pass-through.
-        return ControllableTransport(base: base, gate: gate, onEvent: onEvent)
+        return ControllableTransport(base: base, gate: gate, onEvent: onEvent,
+                                     onStepControl: { [weak self] event in
+            Task { @MainActor in self?.handleStepControl(event) }
+        })
     }
 
     /// Shared by makeTransport() and sign()'s real-backend branch — both
     /// need to agree on which server they're pointed at.
     private func currentBaseURL() -> URL {
         switch transportBackend {
-        case .mock, .localDocker: return AuthServerConfig.baseURL
+        case .mock, .localDocker: return AuthServerConfig.localDevelopmentURL
         case .custom(let url): return url
         }
     }
@@ -522,6 +494,15 @@ final class HarnessFlowModel {
         }
     }
 
+    private func handleStepControl(_ event: StepControlEvent) {
+        switch event {
+        case .paused(let point):
+            log(.stepControl, summary: "PAUSED \(point) — tap Continue, or force-quit / cut the network first")
+        case .resumed(let point):
+            log(.stepControl, summary: "continued \(point)")
+        }
+    }
+
     private func handleTransportEvent(_ event: TransportEvent) {
         switch event {
         case .challengeFetched(let byteCount):
@@ -535,10 +516,6 @@ final class HarnessFlowModel {
                 detail: [DetailField(label: "Account UUID", value: accountUUID)])
         case .sessionOpened(let tokenByteCount):
             log(.assertionSigned, summary: "POST /session → Auth Server, session token issued (\(tokenByteCount) bytes)")
-        case .paused(let point):
-            log(.stepControl, summary: "PAUSED \(point) — tap Continue, or force-quit / cut the network first")
-        case .resumed(let point):
-            log(.stepControl, summary: "continued \(point)")
         case .requestFailed(let endpoint, let statusCode, let detail):
             // This is what the coordinator's own .networkUnavailable label
             // can't tell you: whether the server was ever actually reached.

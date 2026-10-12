@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- DEBUG BUILDS ONLY (INFOPLIST_FILE is set for the Debug configuration
+	     alone). Lets a development build reach the Auth Server running on
+	     the Mac over plain HTTP on the LAN. Scoped to local networking, not
+	     a general ATS bypass, and absent from Release builds altogether.
+	     See AuthServerEnvironment.swift. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Used only in development builds to reach the auth server running on your Mac.</string>
+</dict>
+</plist>

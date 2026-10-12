@@ -16,8 +16,9 @@ class NetworkAdapterMock: NetworkAdapter {
         return "test".data(using: .utf8)!
     }
     
-    func send(request: URLRequest) async throws {
+    func send(request: URLRequest) async throws -> Data {
         mockRequest = request
+        return Data()
     }
     
 }

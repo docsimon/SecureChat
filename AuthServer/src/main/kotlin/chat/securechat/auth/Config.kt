@@ -15,11 +15,16 @@ import ch.veehait.devicecheck.appattest.common.AppleAppAttestEnvironment
  * (accepting dev-signed attestations against a production deployment), not
  * just an inconvenience. Same container image runs everywhere either way
  * (AuthServer/README.md).
+ *
+ * `APPATTEST_BUNDLE_ID` may list several apps, comma-separated. That exists
+ * for DEVELOPMENT, where the real app and its test harness are two bundle
+ * ids sharing one server. Every id listed can register accounts, so a
+ * production deployment lists the shipped app and nothing else.
  */
 data class Config(
     val port: Int,
     val teamIdentifier: String,
-    val bundleIdentifier: String,
+    val bundleIdentifiers: List<String>,
     val appAttestEnvironment: AppleAppAttestEnvironment,
     val postgresUrl: String,
     val postgresUser: String,
@@ -35,7 +40,7 @@ data class Config(
             return Config(
                 port = env("PORT", "8080").toInt(),
                 teamIdentifier = env("APPATTEST_TEAM_ID"),
-                bundleIdentifier = env("APPATTEST_BUNDLE_ID"),
+                bundleIdentifiers = parseBundleIdentifiers(env("APPATTEST_BUNDLE_ID")),
                 appAttestEnvironment = when (env("APPATTEST_ENVIRONMENT")) {
                     "development" -> AppleAppAttestEnvironment.DEVELOPMENT
                     "production" -> AppleAppAttestEnvironment.PRODUCTION
@@ -49,5 +54,9 @@ data class Config(
                 redisUrl = env("REDIS_URL", "redis://localhost:6379"),
             )
         }
+
+        fun parseBundleIdentifiers(raw: String): List<String> =
+            raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                .ifEmpty { error("APPATTEST_BUNDLE_ID must name at least one bundle id") }
     }
 }

@@ -64,8 +64,14 @@ struct LiveKeyStore: AttestationKeyStore {
         guard FileManager.default.fileExists(atPath: try attestationFileURL().path) else {
             return nil
         }
+        // Unreadable (device locked) throws. Unparseable does NOT: a damaged
+        // cache will be just as damaged next time, so reporting it as an
+        // error would fail every later call. It is treated as absent, and
+        // the flow recovers the way it does for any lost attestation.
         let data = try Data(contentsOf: try attestationFileURL())
-        let cached = try JSONDecoder().decode(CachedAttestation.self, from: data)
+        guard let cached = try? JSONDecoder().decode(CachedAttestation.self, from: data) else {
+            return nil
+        }
         return (cached.object, cached.challenge)
     }
 

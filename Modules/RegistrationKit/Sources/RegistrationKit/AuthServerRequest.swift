@@ -1,6 +1,6 @@
 //
 //  AuthServerRequest.swift
-//  AppAttestTestApp
+//  RegistrationKit
 //
 //  Shared by RealAttestationTransport (registration) and SessionClient
 //  (assertion) — both need the same distinction between "never reached the

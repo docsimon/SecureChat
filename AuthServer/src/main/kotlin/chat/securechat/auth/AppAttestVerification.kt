@@ -18,13 +18,43 @@ import java.time.Duration
  */
 class AppAttestVerification(config: Config) {
 
-    private val appleAppAttest = AppleAppAttest(
-        app = App(
-            teamIdentifier = config.teamIdentifier,
-            bundleIdentifier = config.bundleIdentifier,
-        ),
-        appleAppAttestEnvironment = config.appAttestEnvironment,
+    /** The library binds a validator to exactly one app, so: one set per accepted bundle id. */
+    private class AppValidators(
+        val attestation: AttestationValidator,
+        val assertion: AssertionValidator,
     )
+
+    private val validators: List<AppValidators> = config.bundleIdentifiers.map { bundleIdentifier ->
+        val appleAppAttest = AppleAppAttest(
+            app = App(
+                teamIdentifier = config.teamIdentifier,
+                bundleIdentifier = bundleIdentifier,
+            ),
+            appleAppAttestEnvironment = config.appAttestEnvironment,
+        )
+        AppValidators(
+            attestation = createAttestationValidator(appleAppAttest),
+            assertion = createAssertionValidator(appleAppAttest),
+        )
+    }
+
+    /**
+     * Accepts what ANY configured app's validator accepts. Each validator
+     * still checks everything for its own app, so this widens "which app"
+     * to the configured list and nothing else. When all refuse, the first
+     * refusal is reported and the rest are attached as suppressed.
+     */
+    private fun <T> acceptedByAnyApp(validate: (AppValidators) -> T): T {
+        var firstFailure: Exception? = null
+        for (candidate in validators) {
+            try {
+                return validate(candidate)
+            } catch (e: Exception) {
+                if (firstFailure == null) firstFailure = e else firstFailure.addSuppressed(e)
+            }
+        }
+        throw checkNotNull(firstFailure) { "no App Attest app configured" }
+    }
 
     // The receipt embedded in an attestation carries its creation time, and
     // the library rejects it once older than `maxAge` — 5 minutes by default.
@@ -39,13 +69,14 @@ class AppAttestVerification(config: Config) {
     // Freshness is still enforced — by the single-use challenge the
     // attestation is cryptographically bound to. Every other receipt check
     // (signature chain, app identity, attested public key) is unchanged.
-    private val attestationValidator: AttestationValidator = appleAppAttest.createAttestationValidator(
-        receiptValidator = appleAppAttest.createReceiptValidator(
-            maxAge = ATTESTATION_RECEIPT_MAX_AGE,
-        ),
-    )
+    private fun createAttestationValidator(appleAppAttest: AppleAppAttest): AttestationValidator =
+        appleAppAttest.createAttestationValidator(
+            receiptValidator = appleAppAttest.createReceiptValidator(
+                maxAge = ATTESTATION_RECEIPT_MAX_AGE,
+            ),
+        )
 
-    private val assertionValidator: AssertionValidator = appleAppAttest.createAssertionValidator(
+    private fun createAssertionValidator(appleAppAttest: AppleAppAttest): AssertionValidator = appleAppAttest.createAssertionValidator(
         assertionChallengeValidator = object : AssertionChallengeValidator {
             // Always true — reads like a skipped check in isolation, but it
             // isn't one. Freshness/single-use is enforced TWICE already,
@@ -85,11 +116,13 @@ class AppAttestVerification(config: Config) {
         attestationObject: ByteArray,
         keyIdBase64: String,
         challenge: ByteArray,
-    ): ValidatedAttestation = attestationValidator.validate(
-        attestationObject = attestationObject,
-        keyIdBase64 = keyIdBase64,
-        serverChallenge = challenge,
-    )
+    ): ValidatedAttestation = acceptedByAnyApp {
+        it.attestation.validate(
+            attestationObject = attestationObject,
+            keyIdBase64 = keyIdBase64,
+            serverChallenge = challenge,
+        )
+    }
 
     /** @throws ch.veehait.devicecheck.appattest.assertion.AssertionException on any validation failure. */
     fun validateAssertion(
@@ -98,11 +131,13 @@ class AppAttestVerification(config: Config) {
         attestationPublicKey: ECPublicKey,
         lastCounter: Long,
         nonce: ByteArray,
-    ): Assertion = assertionValidator.validate(
-        assertionObject = assertionObject,
-        clientData = clientData,
-        attestationPublicKey = attestationPublicKey,
-        lastCounter = lastCounter,
-        challenge = nonce,
-    )
+    ): Assertion = acceptedByAnyApp {
+        it.assertion.validate(
+            assertionObject = assertionObject,
+            clientData = clientData,
+            attestationPublicKey = attestationPublicKey,
+            lastCounter = lastCounter,
+            challenge = nonce,
+        )
+    }
 }

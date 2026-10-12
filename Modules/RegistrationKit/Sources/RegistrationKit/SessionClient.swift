@@ -1,6 +1,6 @@
 //
 //  SessionClient.swift
-//  AppAttestTestApp
+//  RegistrationKit
 //
 //  APP-OWNED. Demonstrates the assertion flow — the OTHER half of App Attest,
 //  and the one that runs forever rather than once.
@@ -36,19 +36,26 @@ import Foundation
 import CryptoKit
 import AppAttestKit
 
-struct SessionClient {
+public struct SessionClient {
     let baseURL: URL
     /// Note the type — `AssertionSigning`, not `AttestationCoordinator`. The
     /// session layer only needs to sign; it has no business driving registration.
     let signer: AssertionSigning
     let onEvent: @Sendable (TransportEvent) -> Void
 
+    public init(baseURL: URL, signer: AssertionSigning,
+                onEvent: @escaping @Sendable (TransportEvent) -> Void = { _ in }) {
+        self.baseURL = baseURL
+        self.signer = signer
+        self.onEvent = onEvent
+    }
+
     /// Called once at WebSocket handshake, NOT per message.
     ///
     /// Amortise: verify the assertion once, get a short-lived session token, then
     /// use the token for the rest of the connection. An ECDSA verify per message
     /// would be pointless overhead on both ends.
-    func openSession(accountUuid: String) async throws -> String {
+    public func openSession(accountUuid: String) async throws -> String {
         // STEP 2 (app) — obtain a nonce. 60s TTL, much shorter than the
         // registration challenge because nothing is cached against it.
         let nonce = try await fetchNonce()
@@ -117,23 +124,3 @@ private struct SessionRequestBody: Encodable {
     let body: String
 }
 private struct SessionResponseBody: Decodable { let sessionToken: String }
-
-// MARK: - Chat, stubbed
-//
-// Deliberately NOT implemented. The focus here is attestation and assertion.
-// What matters is the ORDER: a session token is obtained via assertion BEFORE
-// any chat connection is opened.
-
-protocol ChatSession: Sendable {
-    func connect(sessionToken: String) async throws
-}
-
-struct StubChatSession: ChatSession {
-    func connect(sessionToken: String) async throws {
-        // Real implementation would open the WebSocket, present the token, and
-        // begin the Noise handshake with the peer.
-        // Note the ordering the architecture requires:
-        //   assertion -> session token -> WebSocket -> Noise handshake -> ratchet
-        print("[chat] connected with token \(sessionToken.prefix(8))…")
-    }
-}

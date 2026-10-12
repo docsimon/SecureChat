@@ -1,8 +1,8 @@
 //
 //  AuthServerConfig.swift
-//  AppAttestTestApp
+//  RegistrationKit
 //
-//  Points the harness at the real Auth Server (AuthServer/, `docker compose
+//  Points a DEVELOPMENT build at the real Auth Server (AuthServer/, `docker compose
 //  up`) running on your Mac. A real device can't reach "localhost" and mean
 //  the Mac — that resolves to the device itself — so this has to be the
 //  Mac's LAN IP, reachable over the same Wi-Fi network as the device.
@@ -11,13 +11,15 @@
 //  router reassigns leases. Update it (`ipconfig getifaddr en0` in Terminal)
 //  when requests start failing for no other reason. This is local-dev-only
 //  plumbing — plain HTTP only works here because of the
-//  NSAllowsLocalNetworking exception in the Xcode project's Info.plist
-//  settings, which is explicitly scoped to local networking, not a general
-//  ATS bypass.
+//  NSAllowsLocalNetworking exception in each app's Info.plist settings,
+//  which is explicitly scoped to local networking, not a general ATS bypass.
+//
+//  Never the address of a shipped build: the real app refuses to compile in
+//  Release while this is the only address it has.
 //
 
 import Foundation
 
-enum AuthServerConfig {
-    static let baseURL = URL(string: "http://192.168.0.84:8080")!
+public enum AuthServerConfig {
+    public static let localDevelopmentURL = URL(string: "http://192.168.0.84:8080")!
 }

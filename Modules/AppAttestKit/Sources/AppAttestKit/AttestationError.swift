@@ -49,6 +49,12 @@ public enum AttestationError: Error, Sendable, Equatable {
     /// Assertion attempted before registration completed.
     case notAttested
 
+    /// The module could not read or write its own persisted state (Keychain
+    /// or the attestation cache file). Not retried within the call — the
+    /// usual cause, a locked device, does not clear in seconds. Nothing is
+    /// discarded; the next call resumes from whatever is on disk.
+    case storageFailed(String)
+
     /// THE CARDINAL RULE. Calling `generateKey()` on anything else treats a
     /// transient or server-side problem as if the key itself were broken,
     /// burning a real Secure Enclave operation for no reason — regenerate
@@ -79,6 +85,7 @@ public enum AttestationError: Error, Sendable, Equatable {
         case .challengeExpired:   return "challengeExpired"
         case .exhausted:          return "exhausted"
         case .notAttested:        return "notAttested"
+        case .storageFailed:      return "storageFailed"
         }
     }
 }
@@ -99,7 +106,9 @@ extension AttestationError {
     /// can guarantee their own `clientDataHash` is always well-formed (see
     /// `AttestationCoordinator.acknowledgeKeyInvalidation()`'s doc comment) —
     /// this module can't assume that for every caller, so it deliberately does
-    /// not fold the two together here.
+    /// not fold the two together here. (During registration the coordinator
+    /// CAN check: it folds `invalidInput` from `attestKey` into `.keyInvalid`
+    /// when the hash it passed was a 32-byte digest.)
     static func from(_ error: Error) -> AttestationError {
         if let already = error as? AttestationError { return already }
 

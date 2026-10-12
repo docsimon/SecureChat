@@ -47,7 +47,7 @@
 		<!-- Local dev only: lets this test harness reach the Auth Server
 		     (AuthServer/, docker compose) over plain HTTP on the LAN. Scoped
 		     to local networking specifically, not a general ATS bypass —
-		     see AuthServerConfig.swift. -->
+		     see AuthServerConfig.swift in RegistrationKit. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

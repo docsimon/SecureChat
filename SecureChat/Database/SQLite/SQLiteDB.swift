@@ -70,43 +70,6 @@ final class SQLiteDB: DatabaseStrategy {
         }
     }
     
-    func update(registration: RegistrationData) {
-        
-        do {
-            // Update guest
-            
-            let registrationRow = RegistrationTable.registration.filter(RegistrationTable.ownerID == registration.ownerID).limit(1)
-            
-            let updateRegistrationQuery = registrationRow.update (
-                RegistrationTable.phoneNumberSentDate <- registration.phoneNumberSentDate,
-                RegistrationTable.otpSentDate <- registration.otpSentDate,
-                RegistrationTable.registrationDate <- registration.registrationDate
-            )
-            
-            try db.run(updateRegistrationQuery)
-            SCLogger.logger.info(message: "Registration table updated correctly!", category: .Database)
-
-        } catch {
-            SCLogger.logger.error(message: "Error updating registration record)", error: error, category: .Database)
-        }
-    }
-    
-    func getRegistrationData() throws -> RegistrationData {
-        
-        guard let row = try db.pluck(RegistrationTable.registration) else {
-            SCLogger.logger.error(message: DBError.ownerIDNotFound.localizedDescription, category: .Database)
-            throw DBError.ownerIDNotFound
-        }
-        
-        let fetchedRegistrationData = RegistrationData(
-            ownerID: row[RegistrationTable.ownerID],
-            phoneNumberSentDate: row[RegistrationTable.phoneNumberSentDate],
-            otpSentDate: row[RegistrationTable.otpSentDate],
-            registrationDate: row[RegistrationTable.registrationDate])
-
-        return fetchedRegistrationData
-    }
-    
     func saveMessage(message: Message) {
         do {
             // Update messages table
@@ -238,8 +201,6 @@ final class SQLiteDB: DatabaseStrategy {
             try schema.createChatTable(db: db)
             try schema.createChatGuestJointTable(db: db)
             try schema.createMessageTable(db: db)
-            let owner = try getOwner()
-            try schema.createRegistrationTable(db: db, ownerID: owner.id)
         } catch {
             SCLogger.logger.error(message: LogMessage.SQLiteTableError, error: error, category: .Database)
         }

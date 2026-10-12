@@ -21,13 +21,17 @@ import Foundation
 /// for no reason. `Sendable` is a data-race ANNOTATION, not mutual exclusion —
 /// it would not prevent this. See module doc §4.
 ///
-/// Regeneration is NOT capped here. Earlier revisions enforced a local,
+/// Regeneration has no PERSISTED cap. Earlier revisions enforced a local,
 /// Keychain-persisted regeneration limit as a defensive measure against an
 /// undocumented Apple-side budget — reconsidered: Apple publishes no per-device
 /// generateKey() count, the Secure Enclave has its own abuse defenses this
 /// module has no business duplicating, and the cap's only measurable effect in
 /// practice was false "exhausted" failures during ordinary reinstall-heavy
 /// testing, with no production recovery path once hit. See account-keys-reference.md.
+///
+/// What IS bounded is a single `ensureAttested()` call: it replaces a dead
+/// key at most once (see `run()`). Nothing is remembered afterwards, so this
+/// cannot strand anyone — the next call simply starts again.
 public actor AttestationCoordinator: AssertionSigning {
 
     /// Internal and injectable so tests can run with zero backoff. Not public:
@@ -35,10 +39,13 @@ public actor AttestationCoordinator: AssertionSigning {
     /// build a competing retry loop alongside this one.
     struct Policy: Sendable {
         var maxAttempts: Int = 5
-        /// Exponential, capped at 60s. `Duration` is iOS 16+, available now
-        /// that the floor is 17.
+        /// Exponential, capped at 60s, then randomised between half and the
+        /// full value. Without the jitter every device that failed at the
+        /// same moment (an Apple or server outage) would retry at the same
+        /// moments too — the load pattern Apple's App Attest guidance warns
+        /// against. `Duration` is iOS 16+, available now that the floor is 17.
         var backoff: @Sendable (Int) -> Duration = { attempt in
-            .seconds(min(pow(2.0, Double(attempt)), 60))
+            .seconds(min(pow(2.0, Double(attempt)), 60) * Double.random(in: 0.5...1))
         }
 
         /// Deadline for a single `DCAppAttestService` call. Those calls have
@@ -117,6 +124,24 @@ public actor AttestationCoordinator: AssertionSigning {
     ///   identity binding now lives server-side instead, see
     ///   `account-keys-reference.md`). A closure rather than a 6th protocol:
     ///   no test needs a seam here (§11).
+    ///
+    /// How a call ends, and what the app should do about it:
+    ///   - returns `.attested` — done.
+    ///   - returns `.unsupported` — this device cannot attest. Terminal.
+    ///   - throws `.exhausted` — transient trouble outlasted the retries.
+    ///     Call again on the next trigger; it resumes where it stopped.
+    ///   - throws `.serverRejected` — the server said no. Do NOT call again
+    ///     from an automatic trigger: against a server that consumes the
+    ///     challenge on a rejected attempt, the following call discards the
+    ///     key and attests a new one, so a server that rejects everything
+    ///     would cost one key per two calls. Retry on the next cold launch
+    ///     or an explicit user action.
+    ///   - throws `.keyInvalid` / `.challengeExpired` — the key was replaced
+    ///     once in this call and the replacement failed the same way. The
+    ///     state is `.none`; treat it like `.serverRejected` above.
+    ///   - throws `.storageFailed` — the Keychain refused a write. State is
+    ///     whatever was last persisted; call again later.
+    ///   - throws `CancellationError` — `acknowledgeKeyInvalidation()` ran.
     @discardableResult
     public func ensureAttested(
         binding: @Sendable @escaping (Data) throws -> Data
@@ -136,8 +161,14 @@ public actor AttestationCoordinator: AssertionSigning {
 
     /// Restores state from disk without contacting Apple or the network.
     /// Call on launch to decide which screen to show.
-    public func restore() async {
-        transition(to: persistedState())
+    ///
+    /// Throws `.storageFailed` when the persisted state cannot be READ —
+    /// typically a launch while the device is still locked. That is not the
+    /// same as "nothing persisted": the state is left as it was, and the app
+    /// must not treat the user as unregistered. Call again once protected
+    /// data is available.
+    public func restore() async throws {
+        transition(to: try persistedState())
     }
 
     /// Call this — in production, not just tests — when the app observes
@@ -207,7 +238,14 @@ public actor AttestationCoordinator: AssertionSigning {
         // straight past whatever a previous run persisted and re-attest a
         // ONE-SHOT key — both for a fully registered key AND for one whose
         // attestation is cached but not yet confirmed by the server.
-        if case .none = state { transition(to: persistedState()) }
+        if case .none = state {
+            do {
+                transition(to: try persistedState())
+            } catch let error as AttestationError {
+                observer?.didFail(error, attempt: 0)
+                throw error
+            }
+        }
         if state.isAttested { return state }
         heldChallenge = nil
 
@@ -219,6 +257,7 @@ public actor AttestationCoordinator: AssertionSigning {
         }
 
         var attempt = 0
+        var replacedKey = false
         while attempt < policy.maxAttempts {
             // Set by cancelInFlight(). Checked before each attempt so a
             // cancelled call never starts another step.
@@ -226,15 +265,21 @@ public actor AttestationCoordinator: AssertionSigning {
             do {
                 return try await attemptRegistration(binding: binding)
             } catch let error as AttestationError where error.requiresNewKey {
-                // The ONLY branch where a new key is legitimate — still bounded
-                // by maxAttempts below (the while loop), just no separate,
-                // longer-lived cap on top of it. Shared logic with
-                // acknowledgeKeyInvalidation() since both are "a key just died,
-                // get ready to make a new one," differing only in *when* that's
-                // discovered.
+                // The ONLY branch where a new key is legitimate. Shared logic
+                // with acknowledgeKeyInvalidation() since both are "a key just
+                // died, get ready to make a new one," differing only in *when*
+                // that's discovered.
                 regenerateKey()
                 attempt += 1
                 observer?.didFail(error, attempt: attempt)
+                // ONE replacement per call. A brand-new key failing the same
+                // way means the cause is not the key (a server that expires
+                // every challenge, a device Apple refuses) — and without this
+                // the loop would spend a real generateKey() on every remaining
+                // attempt, back to back. The dead key is already cleared, so
+                // the next call starts clean.
+                if replacedKey { throw error }
+                replacedKey = true
 
             } catch let error as AttestationError where error.isRetryable {
                 // Retry with the SAME keyId. Never regenerate here.
@@ -244,6 +289,13 @@ public actor AttestationCoordinator: AssertionSigning {
                 if attempt < policy.maxAttempts {
                     try await Task.sleep(for: policy.backoff(attempt))
                 }
+
+            } catch AttestationError.unsupported {
+                // `DCError.featureUnsupported` from a call, on a device whose
+                // `isSupported` said yes. Same outcome as the guard above.
+                observer?.didFail(.unsupported, attempt: attempt)
+                transition(to: .unsupported(.unsupported))
+                return state
 
             } catch let error as AttestationError {
                 observer?.didFail(error, attempt: attempt)
@@ -274,13 +326,13 @@ public actor AttestationCoordinator: AssertionSigning {
     private func performAttestation(binding: @Sendable @escaping (Data) throws -> Data) async throws -> AttestationState {
         // STEP 3 — load before generate, ALWAYS.
         let keyId: String
-        if let existing = try store.loadKeyId() {
+        if let existing = try persisting({ try store.loadKeyId() }) {
             keyId = existing
         } else {
             let service = self.service
             keyId = try await callApple { try await service.generateKey() }
             // STEP 4 — persist BEFORE attesting, so a crash cannot orphan the key.
-            try store.store(keyId: keyId)
+            try persisting { try store.store(keyId: keyId) }
         }
         transition(to: .keyGenerated(keyId: keyId))
 
@@ -310,12 +362,30 @@ public actor AttestationCoordinator: AssertionSigning {
 
         // STEP 7 — ONE-SHOT. After this succeeds the key is assertion-only.
         let service = self.service
-        let attestation = try await callApple {
-            try await service.attestKey(keyId, clientDataHash: clientDataHash)
+        let attestation: Data
+        do {
+            attestation = try await callApple {
+                try await service.attestKey(keyId, clientDataHash: clientDataHash)
+            }
+        } catch AttestationError.serverRejected("invalidInput")
+                    where clientDataHash.count == Self.sha256Length {
+            // Apple rejected the INPUT, and the hash is a well-formed digest —
+            // which leaves the keyId, one this module generated and stored
+            // itself. Apple answers this way (not `.invalidKey`) for a key
+            // orphaned by a reinstall; reported as-is it would be terminal,
+            // and every later call would fail on the same key forever.
+            throw AttestationError.keyInvalid
         }
 
-        // STEP 8 — persist IMMEDIATELY, before any network call.
-        try store.store(attestation: attestation, challenge: challenge)
+        // STEP 8 — persist IMMEDIATELY, before any network call. If the write
+        // fails, carry on from memory rather than throw: the cache only exists
+        // to survive a crash, and throwing here would lose an attestation that
+        // can never be obtained again for this key.
+        do {
+            try persisting { try store.store(attestation: attestation, challenge: challenge) }
+        } catch let error as AttestationError {
+            observer?.didFail(error, attempt: 0)
+        }
         heldChallenge = nil
         transition(to: .attestationPending(keyId: keyId,
                                            attestation: attestation,
@@ -343,13 +413,31 @@ public actor AttestationCoordinator: AssertionSigning {
         // one-shot key, and end up registering a brand-new account. Throwing
         // here leaves `.attestationPending` intact, so the next call just
         // resubmits and the server's idempotency returns the same account.
-        try store.store(isAttested: true)
+        try persisting { try store.store(isAttested: true) }
         try? store.clearAttestation()
         transition(to: .attested(keyId: keyId))
         return state
     }
 
     // MARK: Helpers
+
+    /// `clientDataHash` is documented by Apple as a SHA256 digest.
+    private static let sha256Length = 32
+
+    /// Runs one store call, reporting a failure as `.storageFailed` so it
+    /// goes through the same error handling — and reaches the observer —
+    /// like every other failure, instead of escaping as a raw Keychain error.
+    private func persisting<T>(_ operation: () throws -> T) throws -> T {
+        do {
+            return try operation()
+        } catch {
+            if let keychain = error as? KeychainError {
+                throw AttestationError.storageFailed("keychain \(keychain.status)")
+            }
+            let ns = error as NSError
+            throw AttestationError.storageFailed("\(ns.domain) \(ns.code)")
+        }
+    }
 
     /// Clears the dead key's record and transitions to `.none`, ready for a
     /// fresh `generateKey()` on the next attempt. Shared by the retry loop's
@@ -406,21 +494,30 @@ public actor AttestationCoordinator: AssertionSigning {
 
     /// What the persisted data alone says the state is. Shared by `restore()`
     /// and `run()` so a caller that skips `restore()` resumes identically.
-    private func persistedState() -> AttestationState {
-        guard let keyId = (try? store.loadKeyId()) ?? nil else { return .none }
-        // Order matters: check `attested` FIRST. A registered user must not be
-        // sent back through the flow — attesting a one-shot key a second time
-        // fails with .invalidKey, triggering a needless regeneration for a key
-        // that was never actually broken.
-        if (try? store.loadIsAttested()) == true {
-            return .attested(keyId: keyId)
+    ///
+    /// A read that FAILS throws `.storageFailed`; it is never taken to mean
+    /// "not there". Guessing would be worst exactly where it is most likely:
+    /// with the `keyId` readable but the "server confirmed" flag not, a
+    /// registered key would look merely generated, be sent to `attestKey`
+    /// a second time, fail as invalid, and be replaced — a new account for
+    /// an existing user.
+    private func persistedState() throws -> AttestationState {
+        try persisting {
+            guard let keyId = try store.loadKeyId() else { return .none }
+            // Order matters: check `attested` FIRST. A registered user must
+            // not be sent back through the flow — attesting a one-shot key a
+            // second time fails with .invalidKey, triggering a needless
+            // regeneration for a key that was never actually broken.
+            if try store.loadIsAttested() {
+                return .attested(keyId: keyId)
+            }
+            if let cached = try store.loadAttestation() {
+                return .attestationPending(keyId: keyId,
+                                           attestation: cached.object,
+                                           challenge: cached.challenge)
+            }
+            return .keyGenerated(keyId: keyId)
         }
-        if let cached = try? store.loadAttestation() {
-            return .attestationPending(keyId: keyId,
-                                       attestation: cached.object,
-                                       challenge: cached.challenge)
-        }
-        return .keyGenerated(keyId: keyId)
     }
 
     /// Cancels the in-flight `ensureAttested()`, if any, and waits for it to

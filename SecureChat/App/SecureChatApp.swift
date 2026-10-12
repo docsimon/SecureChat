@@ -14,7 +14,7 @@ struct SecureChatApp: App {
     
     var body: some Scene {
         WindowGroup {
-            RootView(dep: dep, rootViewModel: dep.makeRegistrationViewModel())
+            RootView(dep: dep, registrationViewModel: dep.registrationViewModel)
         }
     }
 }

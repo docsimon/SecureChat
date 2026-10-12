@@ -121,7 +121,7 @@ struct ResumptionTests {
         let store = InMemoryKeyStore(keyId: testKeyId)
         let (coordinator, service, _, _, _) = makeCoordinator(keyStore: store)
 
-        await coordinator.restore()
+        try await coordinator.restore()
         #expect(await coordinator.currentState == .keyGenerated(keyId: testKeyId))
 
         let final = try await coordinator.ensureAttested(binding: identityBinding)
@@ -139,7 +139,7 @@ struct ResumptionTests {
                                       cachedAttestation: (testAttestation, testChallenge))
         let (coordinator, service, _, transport, _) = makeCoordinator(keyStore: store)
 
-        await coordinator.restore()
+        try await coordinator.restore()
         #expect(await coordinator.currentState ==
                 .attestationPending(keyId: testKeyId, attestation: testAttestation, challenge: testChallenge))
 
@@ -192,8 +192,47 @@ struct ResumptionTests {
                                       cachedAttestation: (testAttestation, testChallenge))
         let (coordinator, _, _, _, _) = makeCoordinator(keyStore: store)
 
-        await coordinator.restore()
+        try await coordinator.restore()
         #expect(await coordinator.currentState == .attested(keyId: testKeyId))
+    }
+
+    @Test("restore() throws when the saved state cannot be read, instead of reporting .none")
+    func unreadableStateIsNotNone() async throws {
+        let store = InMemoryKeyStore(keyId: testKeyId, isAttested: true)
+        store.failsIsAttestedReads = true
+        let (coordinator, _, _, _, _) = makeCoordinator(keyStore: store)
+
+        do {
+            try await coordinator.restore()
+            Issue.record("expected .storageFailed to be thrown")
+        } catch let error as AttestationError {
+            #expect(error.diagnosticName == "storageFailed")
+        }
+
+        // Readable again (device unlocked): the registration is still there.
+        store.failsIsAttestedReads = false
+        try await coordinator.restore()
+        #expect(await coordinator.currentState == .attested(keyId: testKeyId))
+    }
+
+    @Test("A registered key whose 'confirmed' flag cannot be read is never re-attested or replaced")
+    func unreadableFlagNeverReattests() async throws {
+        let store = InMemoryKeyStore(keyId: testKeyId, isAttested: true)
+        store.failsIsAttestedReads = true
+        let (coordinator, service, _, transport, observer) = makeCoordinator(keyStore: store)
+
+        do {
+            _ = try await coordinator.ensureAttested(binding: identityBinding)
+            Issue.record("expected .storageFailed to be thrown")
+        } catch let error as AttestationError {
+            #expect(error.diagnosticName == "storageFailed")
+        }
+
+        #expect(await service.attestKeyCallCount == 0)
+        #expect(await service.generateKeyCallCount == 0)
+        #expect(await transport.fetchChallengeCallCount == 0)
+        #expect(try store.loadKeyId() == testKeyId)
+        #expect(observer.failures.last?.error.diagnosticName == "storageFailed")
     }
 }
 
@@ -282,29 +321,66 @@ struct RetryPolicyTests {
         #expect(await transport.fetchChallengeCallCount == 2)
     }
 
-    @Test("A persistent keyInvalid failure still eventually exhausts via maxAttempts — no separate regeneration cap needed")
-    func persistentKeyInvalidExhaustsViaMaxAttempts() async throws {
-        let store = InMemoryKeyStore()
-        let (coordinator, service, _, _, observer) = makeCoordinator(
-            // Every single attestKey call fails with keyInvalid — a
-            // pathological case a real device should never hit, but exactly
-            // what maxAttempts exists to bound regardless of error kind.
-            attestKeyResults: Array(repeating: .failure(AttestationError.keyInvalid), count: 10),
+    @Test("A replacement key that is also invalid ends the call — one replacement per call, not one per attempt")
+    func secondKeyInvalidEndsTheCall() async throws {
+        let (coordinator, service, store, _, observer) = makeCoordinator(
+            generateKeyResults: [.success("key-1"), .success("key-2"), .success("key-3")],
+            attestKeyResults: [.failure(AttestationError.keyInvalid)]
+        )
+
+        await #expect(throws: AttestationError.keyInvalid) {
+            try await coordinator.ensureAttested(binding: identityBinding)
+        }
+
+        #expect(await service.issuedKeyIds == ["key-1", "key-2"])
+        #expect(observer.failures.map(\.error) == [.keyInvalid, .keyInvalid])
+        // The second dead key is cleared too, so the NEXT call starts clean
+        // instead of rediscovering it.
+        #expect(await coordinator.currentState == .none)
+        #expect(try store.loadKeyId() == nil)
+    }
+
+    @Test("attestKey → invalidInput with a well-formed hash is a dead key, not a terminal rejection")
+    func invalidInputOnAttestKeyReplacesTheKey() async throws {
+        let store = InMemoryKeyStore(keyId: "orphaned")
+        let (coordinator, service, _, _, _) = makeCoordinator(
+            generateKeyResults: [.success("key-2")],
+            attestKeyResults: [.failure(AttestationError.serverRejected("invalidInput")),
+                               .success(testAttestation)],
             keyStore: store
         )
 
-        do {
-            _ = try await coordinator.ensureAttested(binding: identityBinding)
-            Issue.record("expected .exhausted to be thrown")
-        } catch let error as AttestationError {
-            #expect(error == .exhausted)
+        let final = try await coordinator.ensureAttested { _ in Data(repeating: 0xAB, count: 32) }
+
+        #expect(final == .attested(keyId: "key-2"))
+        #expect(await service.generateKeyCallCount == 1)
+    }
+
+    @Test("attestKey → invalidInput with a malformed hash stays terminal and keeps the key")
+    func invalidInputWithMalformedHashIsTerminal() async throws {
+        let (coordinator, service, store, _, _) = makeCoordinator(
+            attestKeyResults: [.failure(AttestationError.serverRejected("invalidInput"))]
+        )
+
+        await #expect(throws: AttestationError.serverRejected("invalidInput")) {
+            try await coordinator.ensureAttested { _ in Data([0x01]) }
         }
 
-        // Default policy caps the WHOLE call at 5 attempts (Policy.maxAttempts),
-        // with no separate, smaller cap on regenerations specifically — every
-        // attempt regenerates a fresh key since the old one's already dead.
-        #expect(await service.generateKeyCallCount == 5)
-        #expect(observer.failures.last?.error == .exhausted)
+        #expect(await service.generateKeyCallCount == 1)
+        #expect(try store.loadKeyId() == testKeyId)
+    }
+
+    @Test("featureUnsupported from a call ends in .unsupported, like isSupported == false")
+    func unsupportedFromACallBecomesTheState() async throws {
+        let (coordinator, _, _, _, observer) = makeCoordinator(
+            attestKeyResults: [.failure(AttestationError.unsupported)]
+        )
+
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+
+        #expect(final == .unsupported(.unsupported))
+        #expect(await coordinator.currentState == .unsupported(.unsupported))
+        #expect(observer.failures.last?.error == .unsupported)
     }
 
     @Test("isSupported == false is terminal — no key is ever generated")
@@ -395,11 +471,15 @@ struct SubmitFailureTests {
     func failedConfirmationWriteKeepsCache() async throws {
         let store = Self.pendingStore()
         store.failsIsAttestedWrites = true
-        let (coordinator, service, _, transport, _) = makeCoordinator(keyStore: store)
+        let (coordinator, service, _, transport, observer) = makeCoordinator(keyStore: store)
 
-        await #expect(throws: InMemoryKeyStore.WriteFailure.self) {
-            try await coordinator.ensureAttested(binding: identityBinding)
+        do {
+            _ = try await coordinator.ensureAttested(binding: identityBinding)
+            Issue.record("expected .storageFailed to be thrown")
+        } catch let error as AttestationError {
+            #expect(error.diagnosticName == "storageFailed")
         }
+        #expect(observer.failures.last?.error.diagnosticName == "storageFailed")
         #expect(try store.loadAttestation() != nil)
         #expect(await coordinator.currentState.label == "attestationPending")
 
@@ -412,6 +492,25 @@ struct SubmitFailureTests {
         #expect(await transport.submittedRequests.count == 2)
         #expect(await service.attestKeyCallCount == 0)
         #expect(await service.generateKeyCallCount == 0)
+    }
+
+    @Test("If caching the attestation fails, registration still completes from memory")
+    func failedCacheWriteStillRegisters() async throws {
+        let store = InMemoryKeyStore()
+        store.failsAttestationWrites = true
+        let (coordinator, service, _, transport, observer) = makeCoordinator(
+            submitResults: [.failure(AttestationError.retryable("HTTP 500")), .success(testAccountUUID)],
+            keyStore: store
+        )
+
+        let final = try await coordinator.ensureAttested(binding: identityBinding)
+
+        // The one-shot attestation is not thrown away with the failed write:
+        // it is submitted, and resubmitted, without asking Apple again.
+        #expect(final == .attested(keyId: testKeyId))
+        #expect(await service.attestKeyCallCount == 1)
+        #expect(await transport.submittedRequests.count == 2)
+        #expect(observer.failures.first?.error.diagnosticName == "storageFailed")
     }
 }
 

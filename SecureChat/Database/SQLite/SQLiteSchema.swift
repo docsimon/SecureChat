@@ -14,22 +14,10 @@ protocol SQLiteSchemaProtocol {
     func createChatTable(db: Connection) throws
     func createChatGuestJointTable(db: Connection) throws
     func createMessageTable(db: Connection) throws
-    func createRegistrationTable(db: Connection, ownerID: UUID) throws
 }
 
 
 // Tables Schema
-
-enum RegistrationTable {
-    
-    static let name = "registration"
-    static let registration = Table(name)
-    static let ownerID = SQLite.Expression<UUID>("id")
-    static let phoneNumberSentDate = SQLite.Expression<Date?>("phoneNumberSentDate") // when the user sends the phone numebt to the auth server
-    static let otpSentDate = SQLite.Expression<Date?>("otpSentDate") // when the user sends the otp to the auth server
-    static let registrationDate = SQLite.Expression<Date?>("registrationDate") // when the server confirms user registration after validating the phone number through the otp.
-}
-
 
 enum GuestsTable {
     
@@ -73,33 +61,6 @@ enum MessagesTable {
 }
 
 struct SQLiteSchema: SQLiteSchemaProtocol {
-    
-    
-    //MARK: Registration Table
-    
-    func createRegistrationTable(db: Connection, ownerID: UUID) throws {
-
-        guard !(try db.tableExists(RegistrationTable.name)) else {
-            SCLogger.logger.info(message: "Registration table already exists!", category: .Database)
-            return
-        }
-
-        try db.transaction {
-            try db.run(RegistrationTable.registration.create(ifNotExists: true) { t in
-                t.column(RegistrationTable.ownerID, primaryKey: true)
-                t.column(RegistrationTable.phoneNumberSentDate)
-                t.column(RegistrationTable.otpSentDate)
-                t.column(RegistrationTable.registrationDate)
-            })
-
-            try db.run(RegistrationTable.registration.insert(
-                RegistrationTable.ownerID <- ownerID
-            ))
-        }
-
-        SCLogger.logger.info(message: "Registration table created!", category: .Database)
-    }
-    
     
     
     //MARK: Guests Table

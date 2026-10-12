@@ -6,6 +6,8 @@
 // All Rights Reserved.
 
 import Foundation
+import AppAttestKit
+import RegistrationKit
 
 @MainActor
 final class DependencyManager {
@@ -15,11 +17,12 @@ final class DependencyManager {
     let messageRepo: MessageRepositoryProtocol
     private var db: DatabaseStrategy
     let client: ClientProtocol
-    let authService: AuthService
     let networkAdapter: NetworkAdapter
     let jsonAdapter: JSONAdapter
-    let registrationRepo: RegistrationRepository
-    let registrationManager: RegistrationManager
+    /// One per process: it owns the App Attest state machine, and two of
+    /// them would write the same Keychain state.
+    let attestationCoordinator: AttestationCoordinator
+    let registrationViewModel: RegistrationViewModel
     lazy var ownerID: UUID =  {
         do {
             return try guestRepo.getOwner().id
@@ -62,11 +65,17 @@ final class DependencyManager {
         jsonAdapter = JSONAdapterImpl()
         // NetworkAdapter
         networkAdapter = NetworkAdapterImpl(session: URLSession.shared)
-        // AuthService
-        authService = AuthServiceImpl(networkAdapter: networkAdapter, jsonAdapter: jsonAdapter, baseAddress: .baseAddressAuth)
-        // Registration repository
-        registrationRepo = RegistrationRepositoryImpl(db: db)
-        registrationManager = RegistrationManagerImpl(registrationRepo: registrationRepo)
+        // Registration
+        attestationCoordinator = AttestationCoordinator(
+            transport: RealAttestationTransport(baseURL: AuthServerEnvironment.baseURL),
+            observer: RegistrationLogObserver())
+        registrationViewModel = RegistrationViewModel(coordinator: attestationCoordinator)
+#if DEBUG
+        // Debug builds skip registration, so running the app never spends an
+        // App Attest key. To run the real flow (against the development
+        // server), launch with the argument `-RealRegistration YES`.
+        registrationViewModel.assumesRegistered = !UserDefaults.standard.bool(forKey: "RealRegistration")
+#endif
     }
     
     @MainActor func makeChatListViewModel() -> ChatListViewModel {
@@ -85,19 +94,5 @@ final class DependencyManager {
         let message = chatRepo.getMessage(from: id)
         return MessageViewModel(message: message, guestRepo: guestRepo)
     }
-    
-    @MainActor func makePhoneNumberViewModel() -> PhoneNumberViewModel {
-        return PhoneNumberViewModel(authService: authService, registrationManager: registrationManager)
-    }
-    
-    @MainActor func makeOTPViewModel(ownerID: UUID) -> OTPViewModel {
-        return OTPViewModel(authService: authService,registrationManager: registrationManager, ownerID: ownerID)
-    }
-    
-    @MainActor func makeRegistrationViewModel() -> RootViewModel {
-        return RootViewModel(registrationManager: registrationManager)
-    }
-    
-    
     
 }

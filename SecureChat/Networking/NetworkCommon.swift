@@ -9,7 +9,6 @@ import Foundation
 
 enum BaseAddress {
   
-    case baseAddressAuth
     case baseAddressRelay
 #if DEBUG
     case baseAddressEcho
@@ -17,8 +16,6 @@ enum BaseAddress {
     
     func getBaseAddress() -> String {
         switch self {
-        case .baseAddressAuth:
-            return "http://localhost:8080/"
         case .baseAddressRelay:
             return "http://localhost:8080/relay"
 #if DEBUG
@@ -29,28 +26,6 @@ enum BaseAddress {
     }
 }
 
-
-enum Endpoint {
-    case register
-    case verify
-    case resend
-    case updatePhone(userID: UUID)
-    
-    
-    func getEndpoint() -> String {
-        switch self {
-        case .register:
-            return "register"
-        case .verify:
-            return "register/verify"
-        case .resend:
-            return "register/resend"
-        case .updatePhone(let userID):
-            return "users/\(userID)/phone"
-        }
-        
-    }
-}
 
 enum HTTPMethodType {
     case get

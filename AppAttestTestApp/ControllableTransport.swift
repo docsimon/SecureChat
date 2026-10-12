@@ -25,6 +25,7 @@
 
 import Foundation
 import AppAttestKit
+import RegistrationKit
 
 /// What the wrapper does when the coordinator calls one endpoint. Sticky
 /// until changed, so a retry loop keeps hitting the same behaviour — flip it
@@ -89,10 +90,19 @@ final class TransportGate {
     }
 }
 
+/// Step control holding the flow at a point / letting it go on. Separate
+/// from `TransportEvent`: that type is shared with the real app, which has
+/// no such thing as a pause.
+enum StepControlEvent: Sendable {
+    case paused(at: String)
+    case resumed(at: String)
+}
+
 struct ControllableTransport: AttestationTransport {
     let base: AttestationTransport
     let gate: TransportGate
     let onEvent: @Sendable (TransportEvent) -> Void
+    var onStepControl: @Sendable (StepControlEvent) -> Void = { _ in }
 
     func fetchChallenge() async throws -> Data {
         try await perform("GET /challenge", behavior: await gate.challengeBehavior) {
@@ -157,12 +167,12 @@ struct ControllableTransport: AttestationTransport {
     }
 
     private func hold(_ point: String) async throws {
-        onEvent(.paused(at: point))
+        onStepControl(.paused(at: point))
         await gate.pause(at: point)
         // Released by a reset rather than by Continue: stop here instead of
         // carrying on with a request for state that no longer exists.
         try Task.checkCancellation()
-        onEvent(.resumed(at: point))
+        onStepControl(.resumed(at: point))
     }
 
     private func injected(_ endpoint: String, statusCode: Int?, _ detail: String) {

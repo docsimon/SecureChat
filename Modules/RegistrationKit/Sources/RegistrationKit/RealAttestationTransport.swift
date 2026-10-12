@@ -1,11 +1,10 @@
 //
 //  RealAttestationTransport.swift
-//  AppAttestTestApp
+//  RegistrationKit
 //
 //  APP-OWNED. Implements `AttestationTransport` against the real Auth
-//  Server (AuthServer/), replacing LocalFakeTransport now that the server
-//  exists. See LocalFakeTransport.swift for why TransportEvent never
-//  carries a keyId — that reasoning is unchanged here.
+//  Server (AuthServer/). See TransportEvent.swift for why TransportEvent
+//  never carries a keyId.
 //
 //  Wire encoding is standard base64 throughout (not URL-safe): `keyId`
 //  arrives from DCAppAttestService.generateKey() as standard base64 already,
@@ -17,27 +16,39 @@
 //  the server's verification library fixes that hash formula with no
 //  override seam, so the identity binding moved server-side instead (the
 //  challenge is issued bound to an identityPublicKey and checked back at
-//  /register). The `binding` closure passed to `ensureAttested`/`attestOnly`
-//  in HarnessFlowModel.attestOnly()/registerOnly() must match this — it's
-//  the app's responsibility, not this transport's, but the two have to agree.
+//  /register). The `binding` closure passed to `ensureAttested` must match
+//  this — use `Registration.clientDataHash`, which exists so the two cannot
+//  disagree.
 //
 
 import Foundation
 import AppAttestKit
 
-enum RealAttestationTransportError: Error {
+public enum RealAttestationTransportError: Error {
     case decodingFailed
 }
 
-struct RealAttestationTransport: AttestationTransport {
+public struct RealAttestationTransport: AttestationTransport {
     let baseURL: URL
     /// Read lazily, not captured at construction time — the identity key
     /// may not exist yet when the coordinator (and this transport) is first
-    /// resolved, only by the time attest() actually drives a request through.
+    /// resolved, only by the time a request is actually driven through.
     let identityPublicKeyBase64: @Sendable () -> String
     let onEvent: @Sendable (TransportEvent) -> Void
 
-    func fetchChallenge() async throws -> Data {
+    /// Uses the identity key in `IdentityKeyStore`. Never creates one: a key
+    /// that vanished mid-flow must surface as a server-side rejection, not
+    /// be silently replaced by a new identity.
+    public init(baseURL: URL, onEvent: @escaping @Sendable (TransportEvent) -> Void = { _ in }) {
+        self.baseURL = baseURL
+        self.onEvent = onEvent
+        self.identityPublicKeyBase64 = {
+            guard let key = (try? IdentityKeyStore.loadExisting()) ?? nil else { return "" }
+            return key.publicKey.rawRepresentation.base64EncodedString()
+        }
+    }
+
+    public func fetchChallenge() async throws -> Data {
         var components = URLComponents(url: baseURL.appendingPathComponent("challenge"), resolvingAgainstBaseURL: false)!
         // NOT components.queryItems — confirmed via a real device test that it
         // leaves `+` and `/` completely unescaped (only `=` gets percent-
@@ -70,7 +81,7 @@ struct RealAttestationTransport: AttestationTransport {
         return challenge
     }
 
-    func submitAttestation(_ request: AttestationSubmission) async throws -> String {
+    public func submitAttestation(_ request: AttestationSubmission) async throws -> String {
         let body = RegisterRequestBody(
             keyId: request.keyId,
             challenge: request.challenge.base64EncodedString(),
@@ -99,6 +110,10 @@ struct RealAttestationTransport: AttestationTransport {
         }
 
         let decoded = try JSONDecoder().decode(RegisterResponseBody.self, from: data)
+        // Stored HERE, before returning: the coordinator records "attested"
+        // only after this call returns, so there is never a moment where the
+        // module says registered and the account id is missing.
+        RegisteredAccountStore.current = decoded.accountUuid
         onEvent(.submitted(accountUUID: decoded.accountUuid))
         return decoded.accountUuid
     }

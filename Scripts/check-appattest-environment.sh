@@ -2,24 +2,25 @@
 #
 # check-appattest-environment.sh
 #
-# Confirms which App Attest environment (development/production) the
-# AppAttestTestApp target's most recent DEVICE build was actually signed
-# with — automates the manual codesign check from account-keys-reference.md.
+# Confirms which App Attest environment (development/production) a target's
+# most recent DEVICE build was actually signed with — automates the manual
+# codesign check from account-keys-reference.md.
 #
-# This does NOT build for you. Build AppAttestTestApp for a real device in
+# This does NOT build for you. Build the scheme for a real device in
 # Xcode first (Simulator builds strip this entitlement entirely, which this
 # script will tell you if you point it at one by mistake). Run this
 # afterward to confirm what actually got signed.
 #
 # Usage:
-#   ./Scripts/check-appattest-environment.sh
+#   ./Scripts/check-appattest-environment.sh              # AppAttestTestApp
+#   ./Scripts/check-appattest-environment.sh SecureChat   # the real app
 #
 # Run from the repository root (where SecureChat.xcodeproj lives).
 
 set -euo pipefail
 
 PROJECT="SecureChat.xcodeproj"
-SCHEME="AppAttestTestApp"
+SCHEME="${1:-AppAttestTestApp}"
 ENTITLEMENT_KEY="com.apple.developer.devicecheck.appattest-environment"
 
 if [[ ! -d "$PROJECT" ]]; then
@@ -28,7 +29,7 @@ if [[ ! -d "$PROJECT" ]]; then
     exit 1
 fi
 
-echo "Looking up the built app bundle path for a device build..."
+echo "Looking up the built app bundle path for a device build of $SCHEME..."
 APP_PATH=$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
     -showBuildSettings -destination 'generic/platform=iOS' 2>/dev/null \
     | awk -F ' = ' '/CODESIGNING_FOLDER_PATH/ { print $2; exit }')
@@ -75,7 +76,7 @@ case "$ENV_VALUE" in
         echo "✅ App Attest environment: development — this build won't touch your production key budget."
         ;;
     production)
-        echo "⚠️  App Attest environment: production — tapping Attest on this build WILL spend real production budget."
+        echo "⚠️  App Attest environment: production — registering with this build WILL spend real production budget."
         ;;
     *)
         echo "⚠️  '$ENTITLEMENT_KEY' not found in entitlements."

@@ -49,8 +49,17 @@ final class InMemoryKeyStore: AttestationKeyStore, @unchecked Sendable {
         self.keyId = keyId
     }
 
+    /// When true, `loadIsAttested()` throws while `loadKeyId()` still works —
+    /// the read-side failure that must never be mistaken for "not attested".
+    var failsIsAttestedReads: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _failsIsAttestedReads }
+        set { lock.lock(); defer { lock.unlock() }; _failsIsAttestedReads = newValue }
+    }
+    private var _failsIsAttestedReads = false
+
     func loadIsAttested() throws -> Bool {
         lock.lock(); defer { lock.unlock() }
+        if _failsIsAttestedReads { throw WriteFailure() }
         return isAttested
     }
 
@@ -75,8 +84,17 @@ final class InMemoryKeyStore: AttestationKeyStore, @unchecked Sendable {
         return cached
     }
 
+    /// When true, `store(attestation:challenge:)` throws — simulates the
+    /// cache write failing right after Apple attested the key.
+    var failsAttestationWrites: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _failsAttestationWrites }
+        set { lock.lock(); defer { lock.unlock() }; _failsAttestationWrites = newValue }
+    }
+    private var _failsAttestationWrites = false
+
     func store(attestation: Data, challenge: Data) throws {
         lock.lock(); defer { lock.unlock() }
+        if _failsAttestationWrites { throw WriteFailure() }
         cached = (attestation, challenge)
     }
 

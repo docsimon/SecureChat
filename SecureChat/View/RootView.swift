@@ -6,54 +6,29 @@
 //
 
 import SwiftUI
-import AppAttestKit
 
+/// Decides the first screen from the registration state: the chat list for a
+/// registered device, the registration screen for everything else.
 struct RootView: View {
     
     let dep: DependencyManager
-    let rootViewModel: RootViewModel
+    let registrationViewModel: RegistrationViewModel
     
     var body: some View {
-        switch rootViewModel.state {
-        case .registered:
-            
-            displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
-        case .notStarted:
-            displayPhoneNumberScreen(
-                phoneNumberViewModel: dep.makePhoneNumberViewModel(),
-                ownerID: dep.ownerID,
-                token: "12345")
-        case .awaitingOTP:
-            displayOTPScreen(registrationManager: dep.registrationManager, otpViewModel: dep.makeOTPViewModel(ownerID: dep.ownerID), ownerID: dep.ownerID, token: "12345")
-        case .awaitingConfirmation:
-            Text("Waiting for server confirmation of your number")
+        Group {
+            switch registrationViewModel.phase {
+            case .registered:
+                displayChatListScreen(chatListViewModel: dep.makeChatListViewModel(), dep: dep)
+            case .loading:
+                // Saved state is read in a moment; showing the registration
+                // screen first would flash it at a registered user.
+                ProgressView()
+            case .notRegistered, .registering, .unsupported, .failed:
+                RegistrationView(viewModel: registrationViewModel)
+            }
         }
-
+        .task { await registrationViewModel.load() }
     }
-}
-
-@ViewBuilder @MainActor
-func displayPhoneNumberScreen(
-    phoneNumberViewModel: PhoneNumberViewModel,
-    ownerID: UUID,
-    token: String) -> some View {
-    PhoneNumberView(phoneNumberViewModel: phoneNumberViewModel, ownerID: ownerID, token: token)
-}
-
-func displayOTPScreen(
-    registrationManager: RegistrationManager,
-    otpViewModel: OTPViewModel,
-    ownerID: UUID,
-    token: String) -> some View {
-        OTPVerificationView(viewModel: otpViewModel,
-                            onChangePhoneNumber: {
-            // reset the state to notStarted
-            try registrationManager.resetPhoneNumber()
-        },
-                            onContinue: {  date in
-            try registrationManager.updateRegistrationTable(otpDate: date)
-        }
-    )
 }
 
 @ViewBuilder @MainActor

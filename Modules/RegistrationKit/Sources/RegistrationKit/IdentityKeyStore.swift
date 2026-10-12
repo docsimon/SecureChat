@@ -1,6 +1,6 @@
 //
 //  IdentityKeyStore.swift
-//  AppAttestTestApp
+//  RegistrationKit
 //
 //  APP-OWNED, not part of AppAttestKit. This is the X25519 identity keypair
 //  from architecture-decisions.md §4 and account-keys-reference.md — the
@@ -9,10 +9,6 @@
 //  `.keyInvalid` reset under the Option A decision in
 //  appattestkit-module-design.md §8.
 //
-//  Written for real here, not as a throwaway: this is the same shape the
-//  eventual RegistrationFeature layer needs (module doc §2's layering), so
-//  nothing here is wasted once that layer exists.
-//
 
 import Foundation
 import CryptoKit
@@ -20,12 +16,12 @@ import Security
 
 /// Loads the identity keypair if one exists, or generates and persists one.
 /// Idempotent — safe to call on every launch.
-enum IdentityKeyStore {
+public enum IdentityKeyStore {
 
-    private static let service = "com.securechat.appattesttestapp.identity"
+    private static let service = "com.securechat.registrationkit.identity"
     private static let account = "identityKey"
 
-    static func loadOrCreate() throws -> Curve25519.KeyAgreement.PrivateKey {
+    public static func loadOrCreate() throws -> Curve25519.KeyAgreement.PrivateKey {
         if let existing = try loadExisting() {
             return existing
         }
@@ -37,7 +33,7 @@ enum IdentityKeyStore {
     /// Read-only — never generates. Needed so the UI can correctly reflect
     /// "identity already exists" on launch (e.g. after a real kill-and-
     /// relaunch) without silently creating one just by checking.
-    static func exists() -> Bool {
+    public static func exists() -> Bool {
         // Since Swift 5 (SE-0230), `try?` on a call that already returns an
         // optional flattens automatically — no double-optional here. A
         // thrown error and a genuine "no key stored" both collapse to nil,
@@ -49,7 +45,7 @@ enum IdentityKeyStore {
     /// Read-only — never generates. Use this anywhere a missing key is an
     /// error to report rather than something to silently paper over with a
     /// brand-new identity (e.g. while a registration is already in flight).
-    static func loadExisting() throws -> Curve25519.KeyAgreement.PrivateKey? {
+    public static func loadExisting() throws -> Curve25519.KeyAgreement.PrivateKey? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -86,9 +82,10 @@ enum IdentityKeyStore {
         guard status == errSecSuccess else { throw KeychainError(status: status) }
     }
 
-    /// Test-harness only — the real app never deletes the identity key except
-    /// on deliberate factory-reset/logout (appattestkit-module-design.md §8).
-    static func delete() {
+    /// Only ever together with the App Attest state (v1 policy,
+    /// appattestkit-module-design.md §8): the first-launch purge, a dead App
+    /// Attest key, or a deliberate reset.
+    public static func delete() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

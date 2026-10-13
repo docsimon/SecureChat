@@ -14,6 +14,7 @@ protocol SQLiteSchemaProtocol {
     func createChatTable(db: Connection) throws
     func createChatGuestJointTable(db: Connection) throws
     func createMessageTable(db: Connection) throws
+    func createContactsTable(db: Connection) throws
 }
 
 
@@ -58,6 +59,18 @@ enum MessagesTable {
     static let date = SQLite.Expression<Date>("date")
     static let ttl = SQLite.Expression<Int>("ttl")
     static let isOwner = SQLite.Expression<Bool>("isOwner")
+}
+
+/// People paired with by QR scan (Architecture/pairing-workflow.md). Separate
+/// from `guests`: a contact is an identity key and a routing address, known
+/// before any chat with that person exists.
+enum ContactsTable {
+    static let name = "contacts"
+    static let contacts = Table(name)
+    static let identityPublicKey = SQLite.Expression<Data>("identityPublicKey")
+    static let accountUUID = SQLite.Expression<UUID>("accountUUID")
+    static let displayName = SQLite.Expression<String>("displayName")
+    static let pairedAt = SQLite.Expression<Date>("pairedAt")
 }
 
 struct SQLiteSchema: SQLiteSchemaProtocol {
@@ -157,6 +170,26 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
     }
         
     
+    //MARK: Contacts Table
+
+    func createContactsTable(db: Connection) throws {
+
+        guard !(try db.tableExists(ContactsTable.name)) else {
+            SCLogger.logger.info(message: "Contacts table already exists!", category: .Database)
+            return
+        }
+
+        try db.run(ContactsTable.contacts.create { t in
+            t.column(ContactsTable.identityPublicKey, primaryKey: true)
+            // One contact per routing address as well as per key.
+            t.column(ContactsTable.accountUUID, unique: true)
+            t.column(ContactsTable.displayName)
+            t.column(ContactsTable.pairedAt)
+        })
+
+        SCLogger.logger.info(message: "Contacts table created!", category: .Database)
+    }
+
     private func addOwner(db: Connection) throws {
     
         guard try db.tableExists(GuestsTable.name) else {

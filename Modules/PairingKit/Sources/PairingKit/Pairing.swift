@@ -38,6 +38,21 @@ public enum Pairing {
         case alreadyPaired(PairedContact)
     }
 
+    public struct Evaluation: Equatable, Sendable {
+        public let outcome: Outcome
+        /// The scanned code carried the "I have read your code" marker for
+        /// OUR key: the other phone says it scanned us too. A convenience
+        /// for the UI, not a proof — see `PairingPayload.acknowledges`.
+        public let peerHasScannedUs: Bool
+
+        /// The contact the scan was about, new or already stored.
+        public var contact: PairedContact {
+            switch outcome {
+            case .newContact(let contact), .alreadyPaired(let contact): return contact
+            }
+        }
+    }
+
     /// Checks a scanned code against this device's identity and its stored
     /// contacts.
     ///
@@ -51,7 +66,7 @@ public enum Pairing {
                                 ownIdentityPublicKey: Data,
                                 ownAccountUUID: UUID,
                                 contacts: [PairedContact],
-                                now: Date = Date()) throws -> Outcome {
+                                now: Date = Date()) throws -> Evaluation {
         let payload = try PairingPayload(scanned: scanned)
 
         guard payload.identityPublicKey != ownIdentityPublicKey,
@@ -61,16 +76,19 @@ public enum Pairing {
 
         let sameKey = contacts.first { $0.identityPublicKey == payload.identityPublicKey }
         let sameAccount = contacts.first { $0.accountUUID == payload.accountUUID }
+        let outcome: Outcome
         switch (sameKey, sameAccount) {
         case (nil, nil):
-            return .newContact(PairedContact(identityPublicKey: payload.identityPublicKey,
-                                             accountUUID: payload.accountUUID,
-                                             displayName: payload.displayName,
-                                             pairedAt: now))
+            outcome = .newContact(PairedContact(identityPublicKey: payload.identityPublicKey,
+                                                accountUUID: payload.accountUUID,
+                                                displayName: payload.displayName,
+                                                pairedAt: now))
         case let (existing?, other?) where existing == other:
-            return .alreadyPaired(existing)
+            outcome = .alreadyPaired(existing)
         default:
             throw PairingError.conflictsWithExistingContact
         }
+        return Evaluation(outcome: outcome,
+                          peerHasScannedUs: payload.acknowledges(ownIdentityPublicKey))
     }
 }

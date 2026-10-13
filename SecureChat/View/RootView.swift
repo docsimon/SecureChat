@@ -33,14 +33,45 @@ struct RootView: View {
 
 @ViewBuilder @MainActor
 func displayChatListScreen(chatListViewModel: ChatListViewModel, dep: DependencyManager) -> some View {
-    
+    ChatListScreen(chatListViewModel: chatListViewModel, dep: dep)
+}
+
+struct ChatListScreen: View {
+
+    let chatListViewModel: ChatListViewModel
+    let dep: DependencyManager
+    /// Non-nil while the "Add contact" screen is up; one view model per visit.
+    @State private var pairingViewModel: PairingViewModel?
+
+    var body: some View {
     NavigationStack {
-        List(chatListViewModel.chatList) { model in
-            NavigationLink(value: model.chatID) {
-                ChatListRow(chatListModel: model)
-                    .onAppear {
-                        SCLogger.logger.info(message: "Available CHAT \(model.chatID)", category: .Database)
+        List {
+            Section("Chats") {
+                ForEach(chatListViewModel.chatList) { model in
+                    NavigationLink(value: model.chatID) {
+                        ChatListRow(chatListModel: model)
+                            .onAppear {
+                                SCLogger.logger.info(message: "Available CHAT \(model.chatID)", category: .Database)
+                            }
                     }
+                }
+            }
+            // Paired contacts are not linked to chats yet: that comes with
+            // sessions. Listed here so a pairing has a visible result.
+            Section("Contacts") {
+                if dep.contactRepo.contacts.isEmpty {
+                    Text("No contacts yet. Tap the person icon to pair with someone next to you.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(dep.contactRepo.contacts) { contact in
+                    VStack(alignment: .leading) {
+                        Text(contact.displayName)
+                        Text("Paired \(contact.pairedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .navigationTitle("Chats")
@@ -51,7 +82,18 @@ func displayChatListScreen(chatListViewModel: ChatListViewModel, dep: Dependency
                 }
             
         }
+        .sheet(item: $pairingViewModel) { viewModel in
+            PairingView(viewModel: viewModel)
+        }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    pairingViewModel = dep.makePairingViewModel()
+                } label: {
+                    Image(systemName: "person.badge.plus")
+                }
+                .accessibilityLabel("Add contact")
+            }
             // MARK: Leading (left) button
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: {
@@ -64,4 +106,7 @@ func displayChatListScreen(chatListViewModel: ChatListViewModel, dep: Dependency
             
         }
     }
+    }
 }
+
+extension PairingViewModel: Identifiable {}

@@ -52,10 +52,11 @@ Wire form, version 1:
 ```
 text   "SCPAIR:" + base64url(bytes), no padding
 bytes  [version = 1][identityPublicKey 32][accountUUID 16][nameLength 1][name 1…64]
+       [acknowledgement 8]   optional, see "Face to face" below
 ```
 
-The code is static: the same identity always produces the same code (for the
-same name). It is about 160 characters.
+Without the acknowledgement the code is static: the same identity always
+produces the same code (for the same name). It is about 160 characters.
 
 ### Step 2 — Scan
 
@@ -104,12 +105,49 @@ things a scan cannot (next section).
 
 ---
 
+## Face to face: both scans in one gesture
+
+Tried on 2026-10-13 with an iPhone 16 Plus and an iPhone X (iOS 16.7, fixed-
+focus front camera): held facing each other, each front camera read the other
+screen at once. The X stands in for every phone before the iPhone 14, the
+first with front autofocus.
+
+Each phone shows its code and scans with the front camera at the same time.
+Because both cameras keep watching, the code can say one more thing:
+
+1. A reads B's code and stores the contact.
+2. A's code gains an **acknowledgement**: the first 8 bytes of
+   `SHA256(B's identityPublicKey)`. It means "I have yours".
+3. B, still watching, reads A's code with the acknowledgement for B's own key
+   (`Pairing.Evaluation.peerHasScannedUs`). B now knows A has its code.
+4. The same happens in the other direction, so both phones can say "done"
+   together.
+
+The rules of one attempt are `FaceToFacePairing` in `PairingKit`: the view
+shows `codeToShow`, feeds it every scanned text, and signals the event it
+returns. A contact is stored as soon as its code is read, not held back
+until the pairing is mutual, so pulling the phones apart early never leaves
+a side with less than it read.
+
+Nobody sees their own screen in this position, so the result must be felt or
+heard. Confirmed on both phones on 2026-10-13: the full vibration
+(`kSystemSoundID_Vibrate`) on completion. `UIFeedbackGenerator` haptics alone
+could not be felt, cause not established.
+
+**The acknowledgement is a convenience, not a proof.** It is a hash of a
+public key and anyone can produce it. A false one only makes the liar's own
+contact useless. The first session remains what confirms a pairing.
+
+The rear camera stays available on the same screen as the fallback.
+
 ## What a scan does not prove
 
 1. **That they scanned you back.** A scans B, B never scans A: A holds a
-   contact that B does not have. Until the first session succeeds the contact
-   is "waiting for them to scan you". How this is shown is a UX decision; the
-   contact record has no status field yet.
+   contact that B does not have. Face to face, the acknowledgement tells
+   both phones when the pairing went both ways, but it is not stored and not
+   a proof. With the rear camera, or if one side walks away early, the
+   contact is "waiting for them to scan you" until the first session
+   succeeds. The contact record has no status field yet.
 2. **That they hold the private key.** Anyone can display a code built from
    someone else's public key. Such a contact simply never completes a
    session. Nothing is leaked, because nothing is sent to a contact outside
@@ -143,30 +181,46 @@ it. An attacker would have to replace what is on the screen.
 - **The Simulator has no camera.** The harness has "Copy code as text" and a
   paste field, so two Simulators, or a Simulator and a phone, can pair. A
   phone can also scan the code off a Simulator window on the Mac.
-- **Face-to-face prototype (2026-10-12, untested on phones).** The harness
-  has "Pair face to face (front camera)": it shows this device's code and
-  scans with the front camera at once, so two phones held facing each other
-  read each other in one gesture. Success is a vibration and a sound; the
-  time to read is written to the harness log. The open question is whether
-  front cameras, fixed-focus on older phones, read the code reliably at
-  15–30 cm. If they do, the next step is an "I have yours" marker added to
-  the code after a successful read, which would let both phones know the
-  pairing is mutual.
+- **Face to face in the harness:** "Pair face to face (front camera)".
+  Read times are written to the harness log. Pairing both ways was
+  confirmed on the two phones on 2026-10-13, with the attempt's rules still
+  inside the harness view; they have since moved into `PairingKit`
+  (`FaceToFacePairing`) and that version has not been run on phones.
+- **`PairingKit` and the harness target are set to iOS 16** so the harness
+  runs on the iPhone X. The other packages are iOS 17 and SecureChat 18.5;
+  the production floor is not decided (iOS 17 suggested).
 - **`PairingKit` tests:** `xcodebuild test -scheme PairingKit` in
-  `Modules/PairingKit`, against an iOS Simulator (17 tests).
+  `Modules/PairingKit`, against an iOS Simulator (27 tests).
 - **Debug builds of SecureChat skip registration**
   (`registration-status.md`, blocker 2), so they have no identity key and no
-  account id to put in a code. Integrating pairing into SecureChat needs a
-  Debug-only local identity. No server path is needed for it, since pairing
-  never contacts a server.
+  account id. In that case pairing uses `DebugLocalIdentity`: a made-up key
+  and account id in `UserDefaults`, Debug builds only, known to no server.
+  A run with `-RealRegistration YES` pairs with the registered identity.
+- **SecureChat in the Simulator** has a paste field on the pairing screen
+  (Debug + Simulator only), for a code copied from the harness.
+
+## In SecureChat (2026-10-13)
+
+| Piece | Where |
+|---|---|
+| Entry point | Person icon, top left of the chat list → "Add contact" sheet |
+| Screen | `View/PairingView.swift`: asks for a name once, then face to face with the rear camera as fallback |
+| View model | `Pairing/PairingViewModel.swift`, wrapping `FaceToFacePairing` |
+| Who we are | `Pairing/LocalIdentity.swift`: `IdentityKeyStore` + `RegisteredAccountStore`, or the Debug stand-in |
+| Display name | `ProfileStore` (`UserDefaults`), asked for on first use |
+| Storage | `contacts` table (key is the primary key, account id unique), `ContactRepository` |
+| Result | A "Contacts" section in the chat list |
+
+Verified: 8 unit tests (`SecureChatTests/PairingTests.swift`); the chat list
+seen in the Simulator. **The pairing screen in SecureChat has not been seen
+running, on a phone or in the Simulator.**
 
 ## Not done yet
 
-- **The pairing screen in SecureChat** and its UX (how showing and scanning
-  are arranged so the two scans feel like one action). `PairingKit` is not
-  linked into the SecureChat target yet.
-- **Contact storage in SecureChat.** The existing `guests` table has no
-  column for a key or an account id.
+- **Contacts are not linked to chats.** A paired contact is listed and
+  nothing more; the `guests`/`chats` tables do not know about it. That link
+  belongs with sessions.
+- **Changing your display name**, and renaming or removing a contact.
 - **The "waiting for them to scan you" state**, and what ends it.
 - **Default display name.** The docs propose the identicon word-triple
   (`otter-canyon-4417`, `architecture-decisions.md` §7); no wordlist exists

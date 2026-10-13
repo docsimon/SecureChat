@@ -12,9 +12,13 @@ import PackageDescription
 // the identity public key and the account id, it never loads them. That is
 // what lets the harness pair with a throwaway identity and never touch
 // App Attest.
+//
+// iOS 16, one below the other packages: lowered on 2026-10-13 so the
+// face-to-face test can run on an older phone (worst-case front camera).
+// Nothing here needs 17. Raise it to match the app once the floor is decided.
 let package = Package(
     name: "PairingKit",
-    platforms: [.iOS(.v17)],
+    platforms: [.iOS(.v16)],
     products: [
         .library(name: "PairingKit", targets: ["PairingKit"])
     ],

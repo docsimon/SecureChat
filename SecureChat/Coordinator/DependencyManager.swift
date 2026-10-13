@@ -23,6 +23,8 @@ final class DependencyManager {
     /// them would write the same Keychain state.
     let attestationCoordinator: AttestationCoordinator
     let registrationViewModel: RegistrationViewModel
+    let contactRepo: ContactRepository
+    private var identityProvider = LocalIdentityProvider()
     lazy var ownerID: UUID =  {
         do {
             return try guestRepo.getOwner().id
@@ -75,13 +77,21 @@ final class DependencyManager {
         // App Attest key. To run the real flow (against the development
         // server), launch with the argument `-RealRegistration YES`.
         registrationViewModel.assumesRegistered = !UserDefaults.standard.bool(forKey: "RealRegistration")
+        // A run that skipped registration has no identity to pair with.
+        identityProvider.usesDebugIdentity = registrationViewModel.assumesRegistered
 #endif
+        // Pairing
+        contactRepo = ContactRepository(db: db)
     }
     
     @MainActor func makeChatListViewModel() -> ChatListViewModel {
         return ChatListViewModel(chatRepo: chatRepo)
     }
     
+    @MainActor func makePairingViewModel() -> PairingViewModel {
+        return PairingViewModel(identity: identityProvider.load, contacts: contactRepo)
+    }
+
     @MainActor func makeChatViewModel(with id: ChatID) -> ChatViewModel {
         return ChatViewModel(repository: chatRepo, chatID: id)
     }

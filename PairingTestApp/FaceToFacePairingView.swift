@@ -2,11 +2,13 @@
 //  FaceToFacePairingView.swift
 //  PairingTestApp
 //
-//  PROTOTYPE, to answer one question on two real phones: held face to face,
-//  can each front camera read the code on the other screen, and how fast?
-//  The screen shows this device's code and scans at the same time. With the
-//  phones facing each other nobody sees their own screen, so the result is
-//  a vibration and a sound; the time to read goes to the harness log.
+//  Test bench for pairing with the phones held face to face. The rules of
+//  the attempt are PairingKit's `FaceToFacePairing`, the code that ships;
+//  this view only shows the code, runs the camera, and signals.
+//
+//  Nobody sees their own screen in this position, so progress is felt and
+//  heard: a tap when the other code is read, a full vibration and a sound
+//  when the pairing is complete both ways. Times go to the harness log.
 //
 
 import SwiftUI
@@ -15,16 +17,28 @@ import PairingKit
 
 struct FaceToFacePairingView: View {
 
-    let model: PairingHarnessModel
+    @ObservedObject private var model: PairingHarnessModel
+    @StateObject private var pairing: FaceToFacePairing
 
     @Environment(\.dismiss) private var dismiss
     @State private var camera: QRCodeScannerView.Camera = .front
     @State private var lowCorrection = false
-    @State private var result: PairingHarnessModel.ScanResult?
-    /// The code is in view continuously; act on each distinct one once.
-    @State private var handledCodes: Set<String> = []
     @State private var openedAt = Date()
+    /// When this attempt first read the other code.
+    @State private var readAt: Date?
     @State private var previousBrightness: CGFloat?
+    @State private var impact = UIImpactFeedbackGenerator(style: .heavy)
+    @State private var notification = UINotificationFeedbackGenerator()
+
+    init(model: PairingHarnessModel) {
+        self.model = model
+        _pairing = StateObject(wrappedValue: FaceToFacePairing(
+            identityPublicKey: model.identityPublicKey,
+            accountUUID: model.accountUUID,
+            displayName: model.displayName,
+            contacts: { model.contacts },
+            store: { model.add($0) }))
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -39,7 +53,7 @@ struct FaceToFacePairingView: View {
                 .frame(width: 160)
             }
 
-            if let code = model.myCode,
+            if let code = pairing.codeToShow,
                let image = PairingQRCode.image(for: code, errorCorrection: lowCorrection ? .low : .medium) {
                 Image(decorative: image, scale: 1)
                     .interpolation(.none)
@@ -61,7 +75,7 @@ struct FaceToFacePairingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Bigger squares (less error correction)", isOn: $lowCorrection)
                         .font(.footnote)
-                    Text("Hold the phones face to face, 15–30 cm apart. A vibration means this phone has read the other.")
+                    Text("Hold the phones face to face, 15–30 cm apart. A tap: this phone has read the other. A full vibration: both have.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -70,49 +84,70 @@ struct FaceToFacePairingView: View {
         .padding()
         .background(.white)
         .environment(\.colorScheme, .light)
-        .onChange(of: camera) { restartTimer() }
+        .onChange(of: camera) { _ in restart() }
         .onAppear(perform: begin)
         .onDisappear(perform: end)
     }
 
     private var statusLine: some View {
         Group {
-            switch result {
-            case .none:
+            switch pairing.progress {
+            case .looking:
                 Text("Looking for the other phone's code…").foregroundStyle(.secondary)
-            case .added(let name):
-                Label("Added \(name)", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-            case .alreadyPaired(let name):
-                Label("Already paired with \(name)", systemImage: "checkmark.circle").foregroundStyle(.green)
-            case .refused(let reason):
-                Label("Refused: \(reason)", systemImage: "xmark.octagon.fill").foregroundStyle(.red)
+            case .readTheirs(let contact):
+                Label("Read \(contact.displayName). Waiting for them to read this phone…",
+                      systemImage: "arrow.left.arrow.right")
+                    .foregroundStyle(.orange)
+            case .bothWays(let contact):
+                Label("Paired with \(contact.displayName), both ways", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case .refused(let error):
+                Label("Refused: \(PairingHarnessModel.describe(error))", systemImage: "xmark.octagon.fill")
+                    .foregroundStyle(.red)
             }
         }
         .font(.headline)
+        .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity, minHeight: 28)
     }
 
     private func handle(_ code: String) {
-        guard handledCodes.insert(code).inserted else { return }
-        let elapsed = Date().timeIntervalSince(openedAt)
-        let outcome = model.handle(scanned: code)
-        result = outcome
-        model.note(String(format: "Read in %.1f s with the %@ camera, %@ error correction on this screen",
-                          elapsed, camera == .front ? "front" : "rear", lowCorrection ? "low" : "medium"))
-
-        let feedback = UINotificationFeedbackGenerator()
-        if case .refused = outcome {
-            feedback.notificationOccurred(.error)
-        } else {
-            feedback.notificationOccurred(.success)
-            AudioServicesPlaySystemSound(1057)
+        guard let event = pairing.scanned(code) else { return }
+        // The only clock that starts at a known moment is the screen opening,
+        // so the first figure includes however long it took to get the two
+        // phones in front of each other. The second is the one that says
+        // something about reading: the gap between the two reads.
+        let now = Date()
+        let sinceOpened = String(format: "%.1f s after this screen opened", now.timeIntervalSince(openedAt))
+        let settings = "\(camera == .front ? "front" : "rear") camera, \(lowCorrection ? "low" : "medium") error correction on this screen"
+        switch event {
+        case .readTheirs:
+            readAt = now
+            model.note("Read their code \(sinceOpened) (\(settings))")
+            impact.impactOccurred()
+            impact.prepare()
+        case .completed:
+            if let readAt {
+                model.note(String(format: "Paired both ways %.1f s after reading their code", now.timeIntervalSince(readAt)))
+            } else {
+                model.note("Paired both ways on the first read, \(sinceOpened) (\(settings))")
+            }
+            // The feedback generators alone could not be felt on 2026-10-13
+            // (iPhone 16 Plus, iPhone X; cause not established). The full
+            // vibration does not go through them.
+            notification.notificationOccurred(.success)
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+            AudioServicesPlaySystemSound(1016)
+        case .refused(let error):
+            model.noteRefusal(error)
+            notification.notificationOccurred(.error)
         }
     }
 
-    private func restartTimer() {
+    private func restart() {
         openedAt = Date()
-        handledCodes = []
-        result = nil
+        readAt = nil
+        pairing.restart()
     }
 
     // MARK: Screen
@@ -123,7 +158,9 @@ struct FaceToFacePairingView: View {
 
     /// Full brightness and no auto-lock while the code is being shown.
     private func begin() {
-        restartTimer()
+        restart()
+        impact.prepare()
+        notification.prepare()
         previousBrightness = screen?.brightness
         screen?.brightness = 1
         UIApplication.shared.isIdleTimerDisabled = true

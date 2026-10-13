@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import PairingKit
 
 protocol DatabaseStrategy {
     func saveChat(chat: Chat)
@@ -19,4 +20,6 @@ protocol DatabaseStrategy {
     func bootstrap() throws
     func createChat(title: String)
     func getOwner() throws -> Guest
+    func fetchContacts() throws -> [PairedContact]
+    func addContact(_ contact: PairedContact) throws
 }

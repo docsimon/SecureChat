@@ -10,6 +10,11 @@ import Testing
 
 private func key(_ byte: UInt8) -> Data { Data(repeating: byte, count: 32) }
 
+/// For call sites where a local `key` shadows the function above.
+private enum PairingKitTests {
+    static func key(_ byte: UInt8) -> Data { Data(repeating: byte, count: 32) }
+}
+
 private func code(key keyByte: UInt8 = 7,
                   uuid: UUID = UUID(),
                   name: String = "otter-canyon-4417") throws -> String {
@@ -121,6 +126,34 @@ struct PairingPayloadTests {
         #expect(cut.utf8.count == 64)
     }
 
+    @Test("The acknowledgement survives the round trip and names one key only")
+    func acknowledgementRoundTrip() throws {
+        let plain = try PairingPayload(identityPublicKey: key(7), accountUUID: UUID(), displayName: "Ada")
+        #expect(plain.acknowledgement == nil)
+        #expect(!plain.acknowledges(key(1)))
+
+        let marked = try PairingPayload(identityPublicKey: key(7), accountUUID: plain.accountUUID,
+                                        displayName: "Ada", acknowledging: key(1))
+        let decoded = try PairingPayload(scanned: marked.encoded())
+        #expect(decoded == marked)
+        #expect(decoded.acknowledges(key(1)))
+        #expect(!decoded.acknowledges(key(2)))
+        #expect(marked.encoded() != plain.encoded())
+    }
+
+    @Test("Only an 8-byte acknowledgement may follow the name")
+    func acknowledgementLength() {
+        #expect(throws: PairingError.malformed) {
+            try PairingPayload(scanned: rawCode(rawBytes(trailing: Data(repeating: 1, count: 7))))
+        }
+        #expect(throws: PairingError.malformed) {
+            try PairingPayload(scanned: rawCode(rawBytes(trailing: Data(repeating: 1, count: 9))))
+        }
+        #expect(throws: Never.self) {
+            try PairingPayload(scanned: rawCode(rawBytes(trailing: Data(repeating: 1, count: 8))))
+        }
+    }
+
     @Test("A scanned name is cleaned as well")
     func scannedNameIsCleaned() throws {
         let payload = try PairingPayload(scanned: rawCode(rawBytes(name: Data("Ada\nB".utf8))))
@@ -135,9 +168,34 @@ struct PairingEvaluateTests {
     let ownUUID = UUID()
     let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    private func evaluate(_ text: String, contacts: [PairedContact] = []) throws -> Pairing.Outcome {
+    private func evaluation(_ text: String, contacts: [PairedContact] = []) throws -> Pairing.Evaluation {
         try Pairing.evaluate(scanned: text, ownIdentityPublicKey: ownKey, ownAccountUUID: ownUUID,
                              contacts: contacts, now: now)
+    }
+
+    private func evaluate(_ text: String, contacts: [PairedContact] = []) throws -> Pairing.Outcome {
+        try evaluation(text, contacts: contacts).outcome
+    }
+
+    @Test("A code that acknowledges our key says they scanned us; any other does not")
+    func peerHasScannedUs() throws {
+        let uuid = UUID()
+        func text(acknowledging peer: Data?) throws -> String {
+            try PairingPayload(identityPublicKey: key(7), accountUUID: uuid, displayName: "Ada",
+                               acknowledging: peer).encoded()
+        }
+        #expect(try evaluation(text(acknowledging: nil)).peerHasScannedUs == false)
+        #expect(try evaluation(text(acknowledging: key(9))).peerHasScannedUs == false)
+
+        let acknowledged = try evaluation(text(acknowledging: ownKey))
+        #expect(acknowledged.peerHasScannedUs)
+        #expect(acknowledged.contact.identityPublicKey == key(7))
+
+        // The marker does not make it a different contact.
+        let stored = try evaluation(text(acknowledging: nil)).contact
+        let again = try evaluation(text(acknowledging: ownKey), contacts: [stored])
+        #expect(again.outcome == .alreadyPaired(stored))
+        #expect(again.peerHasScannedUs)
     }
 
     @Test("An unknown code becomes a new contact")
@@ -192,11 +250,134 @@ struct PairingQRCodeTests {
 
     @Test("The image reads back as the same code, longest name included")
     func imageRoundTrip() throws {
-        let text = try code(name: String(repeating: "🦦", count: 16))
+        let text = try PairingPayload(identityPublicKey: key(7), accountUUID: UUID(),
+                                      displayName: String(repeating: "🦦", count: 16),
+                                      acknowledging: key(1)).encoded()
         let image = try #require(PairingQRCode.image(for: text))
         let detector = try #require(CIDetector(ofType: CIDetectorTypeQRCode, context: nil,
                                                options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]))
         let found = detector.features(in: CIImage(cgImage: image)).compactMap { ($0 as? CIQRCodeFeature)?.messageString }
         #expect(found == [text])
+    }
+}
+
+@Suite("FaceToFacePairing")
+@MainActor
+struct FaceToFacePairingTests {
+
+    /// One phone: an identity, a contact list, and the attempt running on it.
+    @MainActor
+    final class Phone {
+        let key: Data
+        let uuid = UUID()
+        var contacts: [PairedContact] = []
+        var storeCount = 0
+        private(set) var pairing: FaceToFacePairing!
+
+        init(_ keyByte: UInt8, name: String) {
+            key = PairingKitTests.key(keyByte)
+            pairing = FaceToFacePairing(
+                identityPublicKey: key, accountUUID: uuid, displayName: name,
+                contacts: { [unowned self] in self.contacts },
+                store: { [unowned self] in self.contacts.append($0); self.storeCount += 1 },
+                now: { Date(timeIntervalSince1970: 1_800_000_000) })
+        }
+
+        var code: String { pairing.codeToShow! }
+    }
+
+    @Test("Two phones facing each other both end up paired both ways")
+    func bothWays() throws {
+        let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob")
+
+        // A reads B first: stored, but B has not acknowledged yet.
+        let bob = try #require(a.pairing.scanned(b.code).flatMap { event -> PairedContact? in
+            if case .readTheirs(let contact) = event { return contact } else { return nil }
+        })
+        #expect(bob.identityPublicKey == b.key)
+        #expect(a.pairing.progress == .readTheirs(bob))
+        #expect(a.contacts == [bob])
+
+        // A's code now carries the marker, so B completes on its first read.
+        let event = b.pairing.scanned(a.code)
+        let ada = try #require(b.contacts.first)
+        #expect(event == .completed(ada))
+        #expect(b.pairing.progress == .bothWays(ada))
+
+        // B's code changed in turn; A completes on reading it.
+        #expect(a.pairing.scanned(b.code) == .completed(bob))
+        #expect(a.pairing.progress == .bothWays(bob))
+
+        #expect(a.storeCount == 1)
+        #expect(b.storeCount == 1)
+    }
+
+    @Test("The code stays in view: the same text is acted on once")
+    func repeatedText() {
+        let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob")
+        let text = b.code
+        #expect(a.pairing.scanned(text) != nil)
+        #expect(a.pairing.scanned(text) == nil)
+        #expect(a.storeCount == 1)
+    }
+
+    @Test("A marker for someone else does not complete the pairing")
+    func foreignAcknowledgement() throws {
+        let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob"), c = Phone(3, name: "Cy")
+        b.pairing.scanned(c.code)          // B now acknowledges C, not A
+        let event = try #require(a.pairing.scanned(b.code))
+        guard case .readTheirs = event else {
+            Issue.record("expected readTheirs, got \(event)")
+            return
+        }
+    }
+
+    @Test("A refused code is reported, and a good one afterwards still pairs")
+    func refusedThenGood() {
+        let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob")
+        #expect(a.pairing.scanned(a.code) == .refused(.ownCode))
+        #expect(a.pairing.progress == .refused(.ownCode))
+        #expect(a.pairing.scanned(b.code) != nil)
+        #expect(a.contacts.count == 1)
+    }
+
+    @Test("Once their code is read, a stray or third code changes nothing")
+    func strayCodesAfterRead() {
+        let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob"), c = Phone(3, name: "Cy")
+        a.pairing.scanned(b.code)
+        let progress = a.pairing.progress
+        #expect(a.pairing.scanned("https://example.com") == nil)
+        #expect(a.pairing.scanned(c.code) == nil)
+        #expect(a.pairing.progress == progress)
+        #expect(a.contacts.count == 1)
+    }
+
+    @Test("An already stored contact completes without being stored again")
+    func alreadyStored() {
+        let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob")
+        a.pairing.scanned(b.code)
+        b.pairing.scanned(a.code)
+        a.pairing.restart()
+        b.pairing.restart()
+        #expect(a.pairing.progress == .looking)
+
+        a.pairing.scanned(b.code)
+        b.pairing.scanned(a.code)
+        a.pairing.scanned(b.code)
+        guard case .bothWays = a.pairing.progress, case .bothWays = b.pairing.progress else {
+            Issue.record("expected both ways on both phones")
+            return
+        }
+        #expect(a.storeCount == 1)
+        #expect(b.storeCount == 1)
+    }
+
+    @Test("Nothing more happens after the pairing is complete")
+    func finalState() {
+        let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob"), c = Phone(3, name: "Cy")
+        a.pairing.scanned(b.code)
+        b.pairing.scanned(a.code)
+        #expect(b.pairing.scanned(c.code) == nil)
+        #expect(b.contacts.count == 1)
     }
 }

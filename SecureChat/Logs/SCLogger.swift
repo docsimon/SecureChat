@@ -33,6 +33,7 @@ enum LogCategory: String {
     case Network = "Network"
     case Message = "Message"
     case Registration = "Registration"
+    case Pairing = "Pairing"
 }
 
 struct LogMessage {

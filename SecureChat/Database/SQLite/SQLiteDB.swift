@@ -7,6 +7,7 @@
 
 import SQLite
 import Foundation
+import PairingKit
 
 final class SQLiteDB: DatabaseStrategy {
         
@@ -181,6 +182,26 @@ final class SQLiteDB: DatabaseStrategy {
         }
     }
     
+    func fetchContacts() throws -> [PairedContact] {
+        try db.prepare(ContactsTable.contacts.order(ContactsTable.pairedAt)).map { row in
+            PairedContact(identityPublicKey: row[ContactsTable.identityPublicKey],
+                          accountUUID: row[ContactsTable.accountUUID],
+                          displayName: row[ContactsTable.displayName],
+                          pairedAt: row[ContactsTable.pairedAt])
+        }
+    }
+
+    func addContact(_ contact: PairedContact) throws {
+        try db.run(ContactsTable.contacts.insert(
+            ContactsTable.identityPublicKey <- contact.identityPublicKey,
+            ContactsTable.accountUUID <- contact.accountUUID,
+            ContactsTable.displayName <- contact.displayName,
+            ContactsTable.pairedAt <- contact.pairedAt
+        ))
+        // The name is what the other side chose to call itself; not logged.
+        SCLogger.logger.info(message: "Contact record created!", category: .Database)
+    }
+
     var chatList: [ChatListModel] = []
        
 
@@ -201,6 +222,7 @@ final class SQLiteDB: DatabaseStrategy {
             try schema.createChatTable(db: db)
             try schema.createChatGuestJointTable(db: db)
             try schema.createMessageTable(db: db)
+            try schema.createContactsTable(db: db)
         } catch {
             SCLogger.logger.error(message: LogMessage.SQLiteTableError, error: error, category: .Database)
         }

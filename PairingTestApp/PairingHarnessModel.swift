@@ -11,11 +11,10 @@
 
 import Foundation
 import CryptoKit
-import Observation
 import PairingKit
 
-@Observable
-final class PairingHarnessModel {
+// ObservableObject, not @Observable: this target runs on iOS 16.
+final class PairingHarnessModel: ObservableObject {
 
     struct LogEntry: Identifiable {
         let id = UUID()
@@ -24,13 +23,13 @@ final class PairingHarnessModel {
         let isError: Bool
     }
 
-    private(set) var identityPublicKey: Data
-    private(set) var accountUUID: UUID
-    var displayName: String {
+    @Published private(set) var identityPublicKey: Data
+    @Published private(set) var accountUUID: UUID
+    @Published var displayName: String {
         didSet { defaults.set(displayName, forKey: Keys.name) }
     }
-    private(set) var contacts: [PairedContact]
-    private(set) var log: [LogEntry] = []
+    @Published private(set) var contacts: [PairedContact]
+    @Published private(set) var log: [LogEntry] = []
 
     private let defaults: UserDefaults
 
@@ -63,15 +62,21 @@ final class PairingHarnessModel {
     }
 
     /// The text of this device's code, or nil while the name is unusable.
-    var myCode: String? {
+    var myCode: String? { myCode(acknowledging: nil) }
+
+    /// - Parameter peer: the identity key of the code just scanned, to tell
+    ///   the other phone "I have yours".
+    func myCode(acknowledging peer: Data?) -> String? {
         try? PairingPayload(identityPublicKey: identityPublicKey,
                             accountUUID: accountUUID,
-                            displayName: displayName).encoded()
+                            displayName: displayName,
+                            acknowledging: peer).encoded()
     }
 
     enum ScanResult: Equatable {
-        case added(name: String)
-        case alreadyPaired(name: String)
+        /// `peerHasScannedUs`: their code said they have ours too.
+        case added(PairedContact, peerHasScannedUs: Bool)
+        case alreadyPaired(PairedContact, peerHasScannedUs: Bool)
         case refused(reason: String)
     }
 
@@ -79,19 +84,21 @@ final class PairingHarnessModel {
     @discardableResult
     func handle(scanned: String) -> ScanResult {
         do {
-            let outcome = try Pairing.evaluate(scanned: scanned,
-                                               ownIdentityPublicKey: identityPublicKey,
-                                               ownAccountUUID: accountUUID,
-                                               contacts: contacts)
-            switch outcome {
+            let evaluation = try Pairing.evaluate(scanned: scanned,
+                                                  ownIdentityPublicKey: identityPublicKey,
+                                                  ownAccountUUID: accountUUID,
+                                                  contacts: contacts)
+            let both = evaluation.peerHasScannedUs
+            let suffix = both ? " (they have our code too)" : ""
+            switch evaluation.outcome {
             case .newContact(let contact):
                 contacts.append(contact)
                 saveContacts()
-                append("Added \(contact.displayName)", isError: false)
-                return .added(name: contact.displayName)
+                append("Added \(contact.displayName)\(suffix)", isError: false)
+                return .added(contact, peerHasScannedUs: both)
             case .alreadyPaired(let contact):
-                append("Already paired with \(contact.displayName); nothing changed", isError: false)
-                return .alreadyPaired(name: contact.displayName)
+                append("Already paired with \(contact.displayName); nothing changed\(suffix)", isError: false)
+                return .alreadyPaired(contact, peerHasScannedUs: both)
             }
         } catch {
             let reason = Self.describe(error)
@@ -99,6 +106,19 @@ final class PairingHarnessModel {
             return .refused(reason: reason)
         }
     }
+
+    /// For `FaceToFacePairing`, which decides for itself what is new.
+    func add(_ contact: PairedContact) {
+        contacts.append(contact)
+        saveContacts()
+        append("Added \(contact.displayName)", isError: false)
+    }
+
+    func noteRefusal(_ error: PairingError) {
+        append("Refused: \(Self.describe(error))", isError: true)
+    }
+
+    static func describe(_ error: PairingError) -> String { describe(error as Error) }
 
     func scannerFailed(_ failure: QRCodeScannerView.Failure) {
         switch failure {

@@ -11,7 +11,7 @@ import PairingKit
 
 struct PairingHarnessView: View {
 
-    @State private var model = PairingHarnessModel()
+    @StateObject private var model = PairingHarnessModel()
     @State private var isScanning = false
     @State private var isFaceToFace = false
     @State private var pastedCode = ""

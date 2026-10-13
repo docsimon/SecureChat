@@ -13,6 +13,7 @@
 		CAD0A0023100000000A1B2C3 /* RegistrationKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAD0A0013100000000A1B2C3 /* RegistrationKit */; };
 		CAD0A0033100000000A1B2C3 /* RegistrationKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAD0A0013100000000A1B2C3 /* RegistrationKit */; };
 		CAE0B0023200000000A1B2C3 /* PairingKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAE0B0013200000000A1B2C3 /* PairingKit */; };
+		CAE0B00C3200000000A1B2C3 /* PairingKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAE0B0013200000000A1B2C3 /* PairingKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -129,6 +130,7 @@
 			files = (
 				CABD5C8D30442E240041D0B0 /* AppAttestKit in Frameworks */,
 				CAD0A0023100000000A1B2C3 /* RegistrationKit in Frameworks */,
+				CAE0B00C3200000000A1B2C3 /* PairingKit in Frameworks */,
 				CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -242,6 +244,7 @@
 				CA70F2A42EA3BEAA0098F0F9 /* SQLite */,
 				CABD5C8C30442E240041D0B0 /* AppAttestKit */,
 				CAD0A0013100000000A1B2C3 /* RegistrationKit */,
+				CAE0B0013200000000A1B2C3 /* PairingKit */,
 			);
 			productName = SecureChat;
 			productReference = CA2506102E8D7367004381A3 /* SecureChat.app */;
@@ -713,6 +716,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SecureChat/Debug-Info.plist";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Used to read the pairing code on the phone of the person you are adding.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -746,6 +750,7 @@
 				DEVELOPMENT_TEAM = PZH5BJLYFE;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Used to read the pairing code on the phone of the person you are adding.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -999,7 +1004,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1030,7 +1035,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

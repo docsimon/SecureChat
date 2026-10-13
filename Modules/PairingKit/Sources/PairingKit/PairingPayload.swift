@@ -9,9 +9,11 @@
 //  Text form:   "SCPAIR:" + base64url(bytes), no padding
 //  Bytes:       [version = 1][identityPublicKey 32][accountUUID 16]
 //               [nameLength 1][displayName, UTF-8, 1...64 bytes]
+//               [acknowledgement 8]            optional
 //
 
 import Foundation
+import CryptoKit
 
 public struct PairingPayload: Equatable, Sendable {
 
@@ -19,19 +21,51 @@ public struct PairingPayload: Equatable, Sendable {
     public static let version: UInt8 = 1
     public static let identityKeyLength = 32
     public static let maxDisplayNameBytes = 64
+    public static let acknowledgementLength = 8
 
     public let identityPublicKey: Data
     public let accountUUID: UUID
     public let displayName: String
+    /// "I have read your code": present once the phone showing this code has
+    /// scanned another one, and names which. See `acknowledges(_:)`.
+    public let acknowledgement: Data?
 
+    /// - Parameter peerIdentityPublicKey: the identity key of the code this
+    ///   device has just scanned, if any. The other phone, still watching
+    ///   this screen, then learns that the pairing went both ways.
     /// - Throws: `invalidIdentityKey`, `invalidDisplayName`.
-    public init(identityPublicKey: Data, accountUUID: UUID, displayName: String) throws {
+    public init(identityPublicKey: Data, accountUUID: UUID, displayName: String,
+                acknowledging peerIdentityPublicKey: Data? = nil) throws {
+        try self.init(identityPublicKey: identityPublicKey, accountUUID: accountUUID, displayName: displayName,
+                      acknowledgement: peerIdentityPublicKey.map(Self.acknowledgement(for:)))
+    }
+
+    private init(identityPublicKey: Data, accountUUID: UUID, displayName: String,
+                 acknowledgement: Data?) throws {
         guard Self.isUsableKey(identityPublicKey) else { throw PairingError.invalidIdentityKey }
         let name = Self.normalizedName(displayName)
         guard !name.isEmpty else { throw PairingError.invalidDisplayName }
         self.identityPublicKey = identityPublicKey
         self.accountUUID = accountUUID
         self.displayName = name
+        self.acknowledgement = acknowledgement
+    }
+
+    // MARK: Acknowledgement
+
+    /// Whether the phone showing this code says it has scanned the code of
+    /// `identityPublicKey`.
+    ///
+    /// A CONVENIENCE, NOT A PROOF. The marker is a hash of a public key, so
+    /// anyone can produce it. It lets both screens say "done" at the same
+    /// moment; whether the other side really stored the contact is settled,
+    /// like everything else, by the first session.
+    public func acknowledges(_ identityPublicKey: Data) -> Bool {
+        acknowledgement == Self.acknowledgement(for: identityPublicKey)
+    }
+
+    static func acknowledgement(for identityPublicKey: Data) -> Data {
+        Data(SHA256.hash(data: identityPublicKey).prefix(acknowledgementLength))
     }
 
     // MARK: Encoding
@@ -44,6 +78,7 @@ public struct PairingPayload: Equatable, Sendable {
         let name = Data(displayName.utf8)
         bytes.append(UInt8(name.count))
         bytes.append(name)
+        if let acknowledgement { bytes.append(acknowledgement) }
         return Self.prefix + Self.base64URLEncode(bytes)
     }
 
@@ -65,16 +100,19 @@ public struct PairingPayload: Equatable, Sendable {
         let key = Data(body[1 ..< 1 + Self.identityKeyLength])
         let uuidBytes = Array(body[1 + Self.identityKeyLength ..< headerLength - 1])
         let nameLength = Int(body[headerLength - 1])
-        // Exact length: no trailing bytes for a later version to hide in.
+        let nameEnd = headerLength + nameLength
+        // Exact lengths only: no trailing bytes for a later version to hide in.
         guard nameLength >= 1, nameLength <= Self.maxDisplayNameBytes,
-              body.count == headerLength + nameLength,
-              let rawName = String(bytes: body[headerLength...], encoding: .utf8) else {
+              body.count == nameEnd || body.count == nameEnd + Self.acknowledgementLength,
+              let rawName = String(bytes: body[headerLength ..< nameEnd], encoding: .utf8) else {
             throw PairingError.malformed
         }
+        let acknowledgement = body.count > nameEnd ? Data(body[nameEnd...]) : nil
 
         let uuid = uuidBytes.withUnsafeBytes { UUID(uuid: $0.loadUnaligned(as: uuid_t.self)) }
         do {
-            try self.init(identityPublicKey: key, accountUUID: uuid, displayName: rawName)
+            try self.init(identityPublicKey: key, accountUUID: uuid, displayName: rawName,
+                          acknowledgement: acknowledgement)
         } catch PairingError.invalidDisplayName {
             throw PairingError.malformed
         }

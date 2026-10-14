@@ -50,7 +50,11 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "-RealRegistration YES"
+            argument = "-RealRegistration"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "YES"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>

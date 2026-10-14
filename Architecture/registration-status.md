@@ -46,8 +46,8 @@ table; there is no migration.
 | Rows 0, 8a, 9, 10, 16, 20 of the error table (storage failures, one-replacement limit, `invalidInput` on `attestKey`, `featureUnsupported` from a call, reset during a hung Apple call) | Unit tests with mocks only. Never seen on a phone. |
 | `RegistrationKit` | 11 unit tests (first-launch gate, environment check). The transport's error mapping has no automated test; its happy path runs in SecureChat's integration tests against a fake server. |
 | Harness after the refactor | Unit tests pass; run on a phone on 2026-10-12 (Register, relaunch, session). |
-| SecureChat registration screen | 7 unit tests pass; start screen and the Debug skip checked in the Simulator. The "registered" path runs in `RegistrationPairingIntegrationTests` with Apple and the server faked (2026-10-14); it has never run against real Apple. |
-| Auth Server bundle-id list | 4 unit tests pass; the harness registered against it on 2026-10-12. Never exercised with SecureChat's bundle id. |
+| SecureChat registration screen | 7 unit tests pass; start screen and the Debug skip checked in the Simulator. The "registered" path runs in `RegistrationPairingIntegrationTests` with Apple and the server faked. **Run for real on the iPhone 16 Plus on 2026-10-14** with the Real Registration scheme: entitlement checked with the script before Register, `App Attest environment: development` logged, the Auth Server issued account `d832cf87…`, relaunch went straight to the chat list. |
+| Auth Server bundle-id list | 4 unit tests pass; the harness registered against it on 2026-10-12, SecureChat on 2026-10-14. |
 
 ## Blockers before Registration is closed
 
@@ -86,7 +86,9 @@ table; there is no migration.
   Enterprise builds, which always use production.)
 - `./Scripts/check-appattest-environment.sh [scheme]` prints the entitlement
   the last **device** build was signed with. Default scheme is the harness;
-  pass `SecureChat` for the app. It needs a signed device build to exist.
+  pass `SecureChat` or `"SecureChat Real Registration"` for the app. It needs
+  a signed device build to exist. For SecureChat, run it while the Register
+  screen is showing: nothing reaches Apple before the tap.
 - The harness shows a badge read from Apple's own response
   (`appattestdevelop`). SecureChat Debug builds log the same check
   (`EnvironmentLoggingTransport`: "App Attest environment: development", or

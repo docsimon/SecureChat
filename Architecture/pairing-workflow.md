@@ -217,9 +217,15 @@ it. An attacker would have to replace what is on the screen.
 | Storage | `contacts` table (key is the primary key, account id unique), `ContactRepository` |
 | Result | A "Contacts" section in the chat list |
 
-Verified: 8 unit tests (`SecureChatTests/PairingTests.swift`); the chat list
-seen in the Simulator. **The pairing screen in SecureChat has not been seen
-running, on a phone or in the Simulator.**
+Verified: 8 unit tests (`SecureChatTests/PairingTests.swift`) and 3
+integration tests (`SecureChatTests/Integration`). **On phones, 2026-10-14:**
+SecureChat on the iPhone 16 Plus, registered for real (development App
+Attest, account `d832cf87…`), paired face to face with `PairingTestApp` on
+the iPhone X; the harness's contact carried account `D832CF87…`, so the code
+SecureChat showed used the registered identity, not the Debug stand-in.
+The first run on a phone also exposed a crash unrelated to pairing: the
+database path was built without a separator and pointed outside
+`Documents`, which a phone refuses (fixed in `SQLiteConstants.swift`).
 
 ## Not done yet
 

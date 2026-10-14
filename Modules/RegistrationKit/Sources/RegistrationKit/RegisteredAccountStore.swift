@@ -16,11 +16,22 @@
 
 import Foundation
 
-public enum RegisteredAccountStore {
+public struct RegisteredAccountStore: @unchecked Sendable {
     private static let key = "registrationkit.accountUUID"
 
-    public static var current: String? {
-        get { UserDefaults.standard.string(forKey: key) }
-        set { UserDefaults.standard.set(newValue, forKey: key) }
+    /// `UserDefaults.standard` — what every build that ships uses.
+    public static let live = RegisteredAccountStore(defaults: .standard)
+
+    // UserDefaults is thread-safe; it is not marked Sendable in every SDK.
+    private let defaults: UserDefaults
+
+    /// Tests pass a throwaway suite so they never touch the real value.
+    public init(defaults: UserDefaults) {
+        self.defaults = defaults
+    }
+
+    public var current: String? {
+        get { defaults.string(forKey: Self.key) }
+        nonmutating set { defaults.set(newValue, forKey: Self.key) }
     }
 }

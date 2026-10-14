@@ -27,12 +27,13 @@ import AppAttestKit
 func performAuthServerRequest(
     _ request: URLRequest,
     endpoint: String,
+    session: URLSession = .shared,
     onEvent: @Sendable (TransportEvent) -> Void
 ) async throws -> Data {
     let data: Data
     let response: URLResponse
     do {
-        (data, response) = try await URLSession.shared.data(for: request)
+        (data, response) = try await session.data(for: request)
     } catch {
         onEvent(.requestFailed(endpoint: endpoint, statusCode: nil, detail: "\(error)"))
         throw error

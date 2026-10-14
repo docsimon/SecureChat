@@ -151,8 +151,8 @@ final class HarnessFlowModel {
         let coordinator = await resolveCoordinator()
         await runFirstLaunchGateOnce(coordinator: coordinator)
 
-        identityGenerated = IdentityKeyStore.exists()
-        if let key = (try? IdentityKeyStore.loadExisting()) ?? nil {
+        identityGenerated = IdentityKeyStore.live.exists()
+        if let key = (try? IdentityKeyStore.live.loadExisting()) ?? nil {
             identityPublicKeyPrefix = key.publicKey.rawRepresentation.prefix(4)
                 .map { String(format: "%02x", $0) }.joined()
         }
@@ -211,7 +211,7 @@ final class HarnessFlowModel {
         activeStep = .identity
         defer { activeStep = .none }
         do {
-            let key = try IdentityKeyStore.loadOrCreate()
+            let key = try IdentityKeyStore.live.loadOrCreate()
             let prefix = key.publicKey.rawRepresentation.prefix(4)
                 .map { String(format: "%02x", $0) }.joined()
             identityGenerated = true
@@ -230,7 +230,7 @@ final class HarnessFlowModel {
     /// a relaunch or a foreground trigger would in the real app.
     func register() async {
         guard activeStep == .none else { return }
-        guard identityGenerated, IdentityKeyStore.exists() else {
+        guard identityGenerated, IdentityKeyStore.live.exists() else {
             log(.attestationFailed, summary: "no identity key — generate one first", isError: true)
             return
         }
@@ -279,7 +279,7 @@ final class HarnessFlowModel {
                 log(.assertionSigned, summary: "assertion signed, mock only — no server involved (\(signature.count) bytes)",
                     detail: [DetailField(label: "Signature size", value: "\(signature.count) bytes")])
             case .localDocker, .custom:
-                guard let accountUuid = RegisteredAccountStore.current else {
+                guard let accountUuid = RegisteredAccountStore.live.current else {
                     log(.signFailed, summary: "no stored account UUID — Attest must complete successfully first", isError: true)
                     return
                 }
@@ -314,8 +314,8 @@ final class HarnessFlowModel {
                 // the gap that method closes, but preserving identity here
                 // would reintroduce the two-path complexity that decision
                 // deliberately traded away for a faster v1 ship.
-                IdentityKeyStore.delete()
-                RegisteredAccountStore.current = nil
+                IdentityKeyStore.live.delete()
+                RegisteredAccountStore.live.current = nil
                 identityPublicKeyPrefix = nil
                 await coordinator.acknowledgeKeyInvalidation()
                 identityGenerated = false
@@ -340,7 +340,7 @@ final class HarnessFlowModel {
     func resetModuleState() async {
         let coordinator = await resolveCoordinator()
         await coordinator.acknowledgeKeyInvalidation()
-        RegisteredAccountStore.current = nil
+        RegisteredAccountStore.live.current = nil
         lastSeenEnvironment = nil
         moduleState = await coordinator.currentState
         log(.moduleReset, summary: "module state cleared — identity key kept. Next Register spends a real key generation.")
@@ -353,8 +353,8 @@ final class HarnessFlowModel {
         // key disappears from under its transport.
         let coordinator = await resolveCoordinator()
         await coordinator.acknowledgeKeyInvalidation()
-        IdentityKeyStore.delete()
-        RegisteredAccountStore.current = nil
+        IdentityKeyStore.live.delete()
+        RegisteredAccountStore.live.current = nil
         identityGenerated = false
         identityPublicKeyPrefix = nil
         lastSeenEnvironment = nil
@@ -511,7 +511,7 @@ final class HarnessFlowModel {
             // Persisted, not just logged — sign() needs this later to open a
             // real session, since AssertionSigning never hands the app a
             // keyId to use instead. See RegisteredAccountStore.swift.
-            RegisteredAccountStore.current = accountUUID
+            RegisteredAccountStore.live.current = accountUUID
             log(.attestationStepSubmitted, summary: "POST /register → Auth Server",
                 detail: [DetailField(label: "Account UUID", value: accountUUID)])
         case .sessionOpened(let tokenByteCount):

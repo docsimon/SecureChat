@@ -68,14 +68,17 @@ final class DependencyManager {
         // NetworkAdapter
         networkAdapter = NetworkAdapterImpl(session: URLSession.shared)
         // Registration
-        attestationCoordinator = AttestationCoordinator(
-            transport: RealAttestationTransport(baseURL: AuthServerEnvironment.baseURL),
-            observer: RegistrationLogObserver())
+        var transport: AttestationTransport = RealAttestationTransport(baseURL: AuthServerEnvironment.baseURL)
+#if DEBUG
+        transport = EnvironmentLoggingTransport(base: transport)
+#endif
+        attestationCoordinator = AttestationCoordinator(transport: transport, observer: RegistrationLogObserver())
         registrationViewModel = RegistrationViewModel(coordinator: attestationCoordinator)
 #if DEBUG
         // Debug builds skip registration, so running the app never spends an
-        // App Attest key. To run the real flow (against the development
-        // server), launch with the argument `-RealRegistration YES`.
+        // App Attest key. The real flow (development App Attest + the local
+        // Auth Server) runs only from the "SecureChat Real Registration"
+        // scheme, which passes the launch argument `-RealRegistration YES`.
         registrationViewModel.assumesRegistered = !UserDefaults.standard.bool(forKey: "RealRegistration")
         // A run that skipped registration has no identity to pair with.
         identityProvider.usesDebugIdentity = registrationViewModel.assumesRegistered

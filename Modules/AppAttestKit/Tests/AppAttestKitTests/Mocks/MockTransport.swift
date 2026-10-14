@@ -8,7 +8,7 @@
 //
 
 import Foundation
-@testable import AppAttestKit
+@_spi(Testing) @testable import AppAttestKit
 
 /// Actor, same reasoning as the other mocks — both protocol methods are async.
 actor MockTransport: AttestationTransport {

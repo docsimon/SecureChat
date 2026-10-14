@@ -195,7 +195,13 @@ it. An attacker would have to replace what is on the screen.
   (`registration-status.md`, blocker 2), so they have no identity key and no
   account id. In that case pairing uses `DebugLocalIdentity`: a made-up key
   and account id in `UserDefaults`, Debug builds only, known to no server.
-  A run with `-RealRegistration YES` pairs with the registered identity.
+  The "SecureChat Real Registration" scheme (opt-in, phone, development
+  App Attest) pairs with the registered identity.
+- **Registration feeding pairing** is covered by
+  `SecureChatTests/Integration/RegistrationPairingIntegrationTests.swift`:
+  two devices register through the real code (Apple and the Auth Server
+  faked), then pair with the key and account id registration stored. See
+  `testing-strategy.md`.
 - **SecureChat in the Simulator** has a paste field on the pairing screen
   (Debug + Simulator only), for a code copied from the harness.
 

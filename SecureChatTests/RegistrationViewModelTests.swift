@@ -45,7 +45,7 @@ final class RegistrationViewModelTests: XCTestCase {
 
     override func tearDown() async throws {
         #if targetEnvironment(simulator)
-        IdentityKeyStore.delete()
+        IdentityKeyStore.live.delete()
         #endif
     }
 
@@ -70,7 +70,7 @@ final class RegistrationViewModelTests: XCTestCase {
     }
 
     func test_assumingRegistered_skipsEverything() async throws {
-        _ = try IdentityKeyStore.loadOrCreate()
+        _ = try IdentityKeyStore.live.loadOrCreate()
         let (viewModel, transport) = makeViewModel(firstLaunch: true)
         viewModel.assumesRegistered = true
 
@@ -78,29 +78,29 @@ final class RegistrationViewModelTests: XCTestCase {
         await viewModel.register()
 
         XCTAssertEqual(viewModel.phase, .registered)
-        XCTAssertTrue(IdentityKeyStore.exists(), "the first-launch purge must not run")
+        XCTAssertTrue(IdentityKeyStore.live.exists(), "the first-launch purge must not run")
         let calls = await transport.calls
         XCTAssertEqual(calls, 0)
     }
 
     func test_firstLaunch_clearsIdentityLeftByAPreviousInstall() async throws {
-        _ = try IdentityKeyStore.loadOrCreate()
-        XCTAssertTrue(IdentityKeyStore.exists())
+        _ = try IdentityKeyStore.live.loadOrCreate()
+        XCTAssertTrue(IdentityKeyStore.live.exists())
         let (viewModel, _) = makeViewModel(firstLaunch: true)
 
         await viewModel.load()
 
-        XCTAssertFalse(IdentityKeyStore.exists())
+        XCTAssertFalse(IdentityKeyStore.live.exists())
         XCTAssertEqual(viewModel.phase, .notRegistered)
     }
 
     func test_laterLaunch_keepsTheIdentity() async throws {
-        _ = try IdentityKeyStore.loadOrCreate()
+        _ = try IdentityKeyStore.live.loadOrCreate()
         let (viewModel, _) = makeViewModel(firstLaunch: false)
 
         await viewModel.load()
 
-        XCTAssertTrue(IdentityKeyStore.exists())
+        XCTAssertTrue(IdentityKeyStore.live.exists())
     }
 
     func test_messages_neverExposeServerDetail() {

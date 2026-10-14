@@ -1,8 +1,10 @@
 //
 //  AttestationEnvironmentHint.swift
-//  AppAttestTestApp
+//  RegistrationKit
 //
 //  Answers "am I actually hitting the App Attest development sandbox?"
+//  Shared by the harness and SecureChat (moved from AppAttestTestApp on
+//  2026-10-14), so both read the same bytes the same way.
 //  directly from Apple's own response, rather than trusting configuration
 //  alone. The aaguid field inside authData is meant to carry a marker
 //  distinguishing development from production — but two secondhand sources
@@ -27,7 +29,7 @@ import Foundation
 /// Which App Attest environment an attestation object says it came from,
 /// judged ONLY from the aaguid Apple put in it — never from the entitlement
 /// or any other local configuration.
-enum AttestationEnvironment: String {
+public enum AttestationEnvironment: String, Sendable {
     case development
     case production
     /// An aaguid was read but matches neither known marker, or the object
@@ -37,14 +39,14 @@ enum AttestationEnvironment: String {
     case unrecognised
 }
 
-enum AttestationEnvironmentHint {
+public enum AttestationEnvironmentHint {
 
     /// Apple's documented markers: the ASCII bytes `appattestdevelop` for
     /// development, and `appattest` followed by seven zero bytes for production.
     private static let developmentAAGUID = Data("appattestdevelop".utf8)
     private static let productionAAGUID = Data("appattest".utf8) + Data(repeating: 0, count: 7)
 
-    static func environment(of attestationObject: Data) -> AttestationEnvironment {
+    public static func environment(of attestationObject: Data) -> AttestationEnvironment {
         guard let aaguid = extractAAGUID(from: attestationObject) else { return .unrecognised }
         if aaguid == developmentAAGUID { return .development }
         if aaguid == productionAAGUID { return .production }
@@ -62,7 +64,7 @@ enum AttestationEnvironmentHint {
         return authData.subdata(in: start..<(start + 16))
     }
 
-    static func describe(_ attestationObject: Data) -> String {
+    public static func describe(_ attestationObject: Data) -> String {
         guard let authData = extractAuthData(from: attestationObject) else {
             return "could not parse authData from the attestation object (CBOR shape unexpected — see AttestationEnvironmentHint.swift)"
         }

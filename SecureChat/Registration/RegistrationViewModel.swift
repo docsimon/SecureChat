@@ -33,22 +33,30 @@ final class RegistrationViewModel {
 
     private let coordinator: AttestationCoordinator
     private let firstLaunchGate: FirstLaunchPurgeGate
+    private let identity: IdentityKeyStore
+    private let account: RegisteredAccountStore
     private var loadTask: Task<Void, Never>?
 
 #if DEBUG
     /// Debug builds only. When true, `load()` reports "registered" without
     /// reading saved state, and nothing here ever reaches Apple or the Auth
-    /// Server. App Attest is a limited resource and is exercised only in the
+    /// Server. App Attest is a limited resource and is tested in the
     /// AppAttestTestApp harness (Architecture/registration-status.md); the
     /// rest of the app is developed as if registration had succeeded.
-    /// The Auth Server does NOT know this device.
+    /// The Auth Server does NOT know this device. The "SecureChat Real
+    /// Registration" scheme turns it off, when the user chooses to.
     @ObservationIgnored var assumesRegistered = false
 #endif
 
+    /// The stores are parameters for tests; the app uses the defaults.
     init(coordinator: AttestationCoordinator,
-         firstLaunchGate: FirstLaunchPurgeGate = .standard(key: "registration.hasLaunchedBefore")) {
+         firstLaunchGate: FirstLaunchPurgeGate = .standard(key: "registration.hasLaunchedBefore"),
+         identity: IdentityKeyStore = .live,
+         account: RegisteredAccountStore = .live) {
         self.coordinator = coordinator
         self.firstLaunchGate = firstLaunchGate
+        self.identity = identity
+        self.account = account
     }
 
     /// Call when the root view appears. Reads saved state only — never
@@ -75,7 +83,8 @@ final class RegistrationViewModel {
         // BEFORE anything is shown: after a reinstall the Keychain still says
         // "registered" for a key Apple no longer recognises.
         await firstLaunchGate.runIfNeeded {
-            if await Registration.purgeStaleInstallState(coordinator: coordinator) {
+            if await Registration.purgeStaleInstallState(coordinator: coordinator,
+                                                         identity: identity, account: account) {
                 SCLogger.logger.info(message: "First launch: cleared registration left by a previous install", category: .Registration)
             }
         }
@@ -110,7 +119,7 @@ final class RegistrationViewModel {
 
         phase = .registering
         do {
-            _ = try IdentityKeyStore.loadOrCreate()
+            _ = try identity.loadOrCreate()
             let state = try await coordinator.ensureAttested(binding: Registration.clientDataHash)
             phase = Self.phase(for: state)
         } catch {

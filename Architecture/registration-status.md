@@ -6,9 +6,13 @@ again. The per-error detail lives in `attestation-error-state-table.md`.
 
 ## Standing rules
 
-1. **Apple's App Attest is exercised only in the `AppAttestTestApp` harness.**
-   It is a limited resource. Any test of the real app (`SecureChat`) assumes
-   Apple works and must not call it. (Stated by the user on 2026-10-12.)
+1. **Apple's App Attest is tested in the `AppAttestTestApp` harness.** It is a
+   limited resource. Any test of the real app (`SecureChat`) assumes Apple
+   works and stands in for it. (Stated by the user on 2026-10-12.) The one
+   exception is opt-in: the `SecureChat Real Registration` scheme runs the
+   real flow (development App Attest + local Auth Server) on a phone, only
+   when the user decides to (added 2026-10-14). No build uses the production
+   entitlement until the user decides to publish on TestFlight.
 2. **Development environment only.** No Debug build may use Apple's production
    App Attest. See "Development-environment safeguards" below.
 3. **The harness runs the code that ships.** Anything both apps need lives in a
@@ -23,7 +27,7 @@ again. The per-error detail lives in `attestation-error-state-table.md`.
 | Piece | Where | Role |
 |---|---|---|
 | `AppAttestKit` | `Modules/AppAttestKit` | The App Attest state machine. Owns the `keyId`, the cached attestation, retries. |
-| `RegistrationKit` | `Modules/RegistrationKit` | Shared by harness and app: Auth Server transport (`RealAttestationTransport`), `SessionClient`, `IdentityKeyStore`, `RegisteredAccountStore`, `FirstLaunchPurgeGate`, `Registration.clientDataHash`, `Registration.purgeStaleInstallState`. |
+| `RegistrationKit` | `Modules/RegistrationKit` | Shared by harness and app: Auth Server transport (`RealAttestationTransport`), `SessionClient`, `IdentityKeyStore`, `RegisteredAccountStore`, `FirstLaunchPurgeGate`, `Registration.clientDataHash`, `Registration.purgeStaleInstallState`, `AttestationEnvironmentHint`. The two stores are values (`.live` in shipping code) so tests can pass in-memory ones. |
 | Harness | `AppAttestTestApp` | Single-step testing on a phone: step control, fake transport, environment badge. |
 | Real app | `SecureChat/Registration`, `View/RegistrationView.swift`, `View/RootView.swift` | `RegistrationViewModel` → Register button → chat list. Registration starts only from the user's tap. |
 | Auth Server | `AuthServer` | `GET /challenge`, `POST /register`, `GET /session/nonce`, `POST /session`. Accepts a comma-separated list of bundle ids in `APPATTEST_BUNDLE_ID`. |
@@ -40,9 +44,9 @@ table; there is no migration.
 | `AppAttestKit` rules | 33 unit tests pass. |
 | Registration against Apple + local Auth Server, the ordinary failures (no network, server 5xx, app killed, `attestKey` hanging offline), reinstall purge | Observed on a phone with the harness on 2026-10-06/07 and 2026-10-12 — **before** the transport and purge moved into `RegistrationKit`. |
 | Rows 0, 8a, 9, 10, 16, 20 of the error table (storage failures, one-replacement limit, `invalidInput` on `attestKey`, `featureUnsupported` from a call, reset during a hung Apple call) | Unit tests with mocks only. Never seen on a phone. |
-| `RegistrationKit` | 4 unit tests (first-launch gate only). The transport's encoding and error mapping have no automated test. |
+| `RegistrationKit` | 11 unit tests (first-launch gate, environment check). The transport's error mapping has no automated test; its happy path runs in SecureChat's integration tests against a fake server. |
 | Harness after the refactor | Unit tests pass; run on a phone on 2026-10-12 (Register, relaunch, session). |
-| SecureChat registration screen | 7 unit tests pass; start screen and the Debug skip checked in the Simulator. The real "registered" and "failed" paths have never run: the Simulator can only reach "unsupported". |
+| SecureChat registration screen | 7 unit tests pass; start screen and the Debug skip checked in the Simulator. The "registered" path runs in `RegistrationPairingIntegrationTests` with Apple and the server faked (2026-10-14); it has never run against real Apple. |
 | Auth Server bundle-id list | 4 unit tests pass; the harness registered against it on 2026-10-12. Never exercised with SecureChat's bundle id. |
 
 ## Blockers before Registration is closed
@@ -84,8 +88,9 @@ table; there is no migration.
   the last **device** build was signed with. Default scheme is the harness;
   pass `SecureChat` for the app. It needs a signed device build to exist.
 - The harness shows a badge read from Apple's own response
-  (`appattestdevelop`). SecureChat has no such check; under rule 1 it should
-  not need one.
+  (`appattestdevelop`). SecureChat Debug builds log the same check
+  (`EnvironmentLoggingTransport`: "App Attest environment: development", or
+  a ⚠️ error) when the Real Registration scheme runs the real flow.
 - The Auth Server refuses to start without `APPATTEST_ENVIRONMENT`.
 - SecureChat's Release configuration fails to compile on purpose
   (`AuthServerEnvironment.swift`, `#error`) until a production server address

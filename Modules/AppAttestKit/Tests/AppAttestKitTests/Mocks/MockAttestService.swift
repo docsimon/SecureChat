@@ -10,7 +10,7 @@
 //
 
 import Foundation
-@testable import AppAttestKit
+@_spi(Testing) @testable import AppAttestKit
 
 /// An `actor`, not a class. `generateKey`/`attestKey`/`generateAssertion` are
 /// all `async` in the protocol, so actor isolation gives thread-safe mutable

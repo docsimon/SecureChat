@@ -10,7 +10,9 @@ import Foundation
 // Seam over persistence. The module owns `keyId` storage because it owns the
 // "retry with the same keyId" rule — if the app held it, that rule would not
 // be enforceable. Also caches the attestation object (see AttestationState).
-protocol AttestationKeyStore: Sendable {
+// SPI for the same reason as `AttestServicing`: tests only.
+@_spi(Testing)
+public protocol AttestationKeyStore: Sendable {
     func loadKeyId() throws -> String?
     func store(keyId: String) throws
     /// Records that the SERVER confirmed registration. Without this, a relaunch

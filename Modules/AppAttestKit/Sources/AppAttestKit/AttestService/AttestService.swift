@@ -10,7 +10,12 @@ import DeviceCheck
 
 /// Seam over `DCAppAttestService`, which is a concrete class that cannot be
 /// subclassed or stubbed and only returns errors on real hardware.
-protocol AttestServicing: Sendable {
+///
+/// SPI, not plain public: the app's tests stand in for Apple through it (see
+/// `AttestationCoordinator.init(testingService:...)`), but code that ships
+/// cannot see it without `@_spi(Testing) import AppAttestKit`.
+@_spi(Testing)
+public protocol AttestServicing: Sendable {
     var isSupported: Bool { get }
     func generateKey() async throws -> String
     func attestKey(_ keyId: String, clientDataHash: Data) async throws -> Data

@@ -14,7 +14,7 @@
 
 import Foundation
 import Testing
-@testable import AppAttestKit
+@_spi(Testing) @testable import AppAttestKit
 
 // MARK: - Shared fixtures
 //

@@ -8,7 +8,7 @@
 //
 
 import Foundation
-@testable import AppAttestKit
+@_spi(Testing) @testable import AppAttestKit
 
 /// A plain class with a lock, NOT an actor — deliberately different from the
 /// other three mocks.

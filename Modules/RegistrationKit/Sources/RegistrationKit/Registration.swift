@@ -34,10 +34,12 @@ public enum Registration {
     ///
     /// - Returns: whether anything was there to clear.
     @discardableResult
-    public static func purgeStaleInstallState(coordinator: AttestationCoordinator) async -> Bool {
-        let hadIdentity = IdentityKeyStore.exists()
+    public static func purgeStaleInstallState(coordinator: AttestationCoordinator,
+                                              identity: IdentityKeyStore = .live,
+                                              account: RegisteredAccountStore = .live) async -> Bool {
+        let hadIdentity = identity.exists()
         if hadIdentity {
-            IdentityKeyStore.delete()
+            identity.delete()
         }
         // Unreadable counts as "something is there": a purge that skipped on
         // a failed read would leave the stale key behind for good, since the
@@ -52,7 +54,7 @@ public enum Registration {
         guard hadIdentity || hadModuleState else { return false }
         // Stale from whatever registration that Keychain state belonged to —
         // the NEXT registration will be given a different account id.
-        RegisteredAccountStore.current = nil
+        account.current = nil
         return true
     }
 }

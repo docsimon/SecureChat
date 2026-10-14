@@ -34,16 +34,25 @@ public struct RealAttestationTransport: AttestationTransport {
     /// may not exist yet when the coordinator (and this transport) is first
     /// resolved, only by the time a request is actually driven through.
     let identityPublicKeyBase64: @Sendable () -> String
+    let account: RegisteredAccountStore
+    let session: URLSession
     let onEvent: @Sendable (TransportEvent) -> Void
 
-    /// Uses the identity key in `IdentityKeyStore`. Never creates one: a key
-    /// that vanished mid-flow must surface as a server-side rejection, not
-    /// be silently replaced by a new identity.
-    public init(baseURL: URL, onEvent: @escaping @Sendable (TransportEvent) -> Void = { _ in }) {
+    /// Uses the identity key in `identity`. Never creates one: a key that
+    /// vanished mid-flow must surface as a server-side rejection, not be
+    /// silently replaced by a new identity. The stores and the session are
+    /// parameters for tests only; everything that ships uses the defaults.
+    public init(baseURL: URL,
+                identity: IdentityKeyStore = .live,
+                account: RegisteredAccountStore = .live,
+                session: URLSession = .shared,
+                onEvent: @escaping @Sendable (TransportEvent) -> Void = { _ in }) {
         self.baseURL = baseURL
+        self.account = account
+        self.session = session
         self.onEvent = onEvent
         self.identityPublicKeyBase64 = {
-            guard let key = (try? IdentityKeyStore.loadExisting()) ?? nil else { return "" }
+            guard let key = (try? identity.loadExisting()) ?? nil else { return "" }
             return key.publicKey.rawRepresentation.base64EncodedString()
         }
     }
@@ -71,7 +80,7 @@ public struct RealAttestationTransport: AttestationTransport {
         let encodedKey = identityPublicKeyBase64().addingPercentEncoding(withAllowedCharacters: unreserved) ?? ""
         components.percentEncodedQuery = "identityPublicKey=\(encodedKey)"
 
-        let data = try await performAuthServerRequest(URLRequest(url: components.url!), endpoint: "GET /challenge", onEvent: onEvent)
+        let data = try await performAuthServerRequest(URLRequest(url: components.url!), endpoint: "GET /challenge", session: session, onEvent: onEvent)
 
         let decoded = try JSONDecoder().decode(ChallengeResponseBody.self, from: data)
         guard let challenge = Data(base64Encoded: decoded.challenge) else {
@@ -95,7 +104,7 @@ public struct RealAttestationTransport: AttestationTransport {
 
         let data: Data
         do {
-            data = try await performAuthServerRequest(urlRequest, endpoint: "POST /register", onEvent: onEvent)
+            data = try await performAuthServerRequest(urlRequest, endpoint: "POST /register", session: session, onEvent: onEvent)
         } catch AttestationError.serverRejected(let detail) where detail.contains("challenge_invalid_or_expired") {
             // The one rejection the module must hear about specifically (see
             // `AttestationTransport`'s doc comment): the attestation we are
@@ -113,7 +122,7 @@ public struct RealAttestationTransport: AttestationTransport {
         // Stored HERE, before returning: the coordinator records "attested"
         // only after this call returns, so there is never a moment where the
         // module says registered and the account id is missing.
-        RegisteredAccountStore.current = decoded.accountUuid
+        account.current = decoded.accountUuid
         onEvent(.submitted(accountUUID: decoded.accountUuid))
         return decoded.accountUuid
     }

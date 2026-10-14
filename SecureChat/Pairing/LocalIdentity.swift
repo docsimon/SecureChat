@@ -23,6 +23,11 @@ enum LocalIdentityError: Error {
 
 struct LocalIdentityProvider {
 
+    /// Where registration left the identity key and the account id. The
+    /// app uses the defaults; tests pass the stores registration wrote to.
+    var identityStore: IdentityKeyStore = .live
+    var accountStore: RegisteredAccountStore = .live
+
 #if DEBUG
     /// Debug builds only. Debug runs skip registration
     /// (`RegistrationViewModel.assumesRegistered`), so there is no identity
@@ -35,8 +40,8 @@ struct LocalIdentityProvider {
 #if DEBUG
         if usesDebugIdentity { return DebugLocalIdentity.loadOrCreate() }
 #endif
-        guard let key = try IdentityKeyStore.loadExisting(),
-              let uuid = RegisteredAccountStore.current.flatMap(UUID.init(uuidString:)) else {
+        guard let key = try identityStore.loadExisting(),
+              let uuid = accountStore.current.flatMap(UUID.init(uuidString:)) else {
             throw LocalIdentityError.notRegistered
         }
         return LocalIdentity(identityPublicKey: key.publicKey.rawRepresentation, accountUUID: uuid)

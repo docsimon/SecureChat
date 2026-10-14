@@ -82,11 +82,13 @@ public actor AttestationCoordinator: AssertionSigning {
 
     // MARK: Initializers
     //
-    // Two of them, because a `public init` cannot expose internal parameter
-    // types — and `AttestServicing`/`AttestationKeyStore` are internal by design.
+    // A production one that cannot be handed a service or store, and test
+    // ones that can. `AttestServicing`/`AttestationKeyStore` are SPI, so the
+    // app only sees them by opting in with `@_spi(Testing) import`.
 
     /// Production. The app supplies only what is genuinely app-specific.
-    /// Note it CANNOT inject a service or store — that is the point.
+    /// Note it CANNOT inject a service or store — that is the point. (The
+    /// Debug-only SPI initializer below exists for tests, not for the app.)
     public init(transport: AttestationTransport, observer: AttestationObserver? = nil) {
         self.init(service: LiveAttestService(),
                   store: LiveKeyStore(),
@@ -94,6 +96,22 @@ public actor AttestationCoordinator: AssertionSigning {
                   observer: observer,
                   policy: .default)
     }
+
+#if DEBUG
+    /// Tests of OTHER modules and of the app, which cannot use
+    /// `@testable import AppAttestKit`: the real state machine with Apple and
+    /// the Keychain replaced. Debug builds only, and behind
+    /// `@_spi(Testing) import AppAttestKit`, so nothing that ships can reach
+    /// it. Retries without waiting.
+    @_spi(Testing)
+    public init(testingService service: AttestServicing,
+                store: AttestationKeyStore,
+                transport: AttestationTransport,
+                observer: AttestationObserver? = nil) {
+        self.init(service: service, store: store, transport: transport,
+                  observer: observer, policy: .immediate)
+    }
+#endif
 
     /// Tests. Internal — reachable via `@testable import AppAttestKit`.
     init(service: AttestServicing,

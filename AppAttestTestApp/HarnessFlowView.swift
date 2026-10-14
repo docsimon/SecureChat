@@ -11,6 +11,7 @@
 //
 
 import SwiftUI
+import RegistrationKit
 
 private enum BackendKind: String, CaseIterable, Identifiable, Hashable {
     case mock = "Mock"

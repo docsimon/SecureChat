@@ -18,7 +18,8 @@ again. The per-error detail lives in `attestation-error-state-table.md`.
 3. **The harness runs the code that ships.** Anything both apps need lives in a
    package both compile, never copied into the harness.
 4. **Each main feature gets its own harness app target.** Pairing has
-   `PairingTestApp` (see `pairing-workflow.md`).
+   `PairingTestApp` (see `pairing-workflow.md`), sessions `SessionTestApp`
+   (see `session-workflow.md`).
 5. **Rare failures are ignored on purpose**, but written down (the error table's
    "Known and accepted" section).
 

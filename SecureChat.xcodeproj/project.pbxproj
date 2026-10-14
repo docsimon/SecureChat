@@ -14,6 +14,8 @@
 		CAD0A0033100000000A1B2C3 /* RegistrationKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAD0A0013100000000A1B2C3 /* RegistrationKit */; };
 		CAE0B0023200000000A1B2C3 /* PairingKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAE0B0013200000000A1B2C3 /* PairingKit */; };
 		CAE0B00C3200000000A1B2C3 /* PairingKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAE0B0013200000000A1B2C3 /* PairingKit */; };
+		CAF0C0023300000000A1B2C3 /* SessionKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAF0C0013300000000A1B2C3 /* SessionKit */; };
+		CAF0C00C3300000000A1B2C3 /* PairingKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAF0C00D3300000000A1B2C3 /* PairingKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -55,6 +57,7 @@
 		CA3469063049D39400C50190 /* AppAttestTestAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppAttestTestAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA3469103049D39500C50190 /* AppAttestTestAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppAttestTestAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CAE0B0033200000000A1B2C3 /* PairingTestApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PairingTestApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CAF0C0033300000000A1B2C3 /* SessionTestApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SessionTestApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -71,6 +74,13 @@
 				"Debug-Info.plist",
 			);
 			target = CA25060F2E8D7367004381A3 /* SecureChat */;
+		};
+		CAF0C00E3300000000A1B2C3 /* Exceptions for "SessionTestApp" folder in "SessionTestApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CAF0C0083300000000A1B2C3 /* SessionTestApp */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -119,6 +129,14 @@
 		CAE0B0043200000000A1B2C3 /* PairingTestApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = PairingTestApp;
+			sourceTree = "<group>";
+		};
+		CAF0C0043300000000A1B2C3 /* SessionTestApp */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CAF0C00E3300000000A1B2C3 /* Exceptions for "SessionTestApp" folder in "SessionTestApp" target */,
+			);
+			path = SessionTestApp;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -180,6 +198,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CAF0C0053300000000A1B2C3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CAF0C0023300000000A1B2C3 /* SessionKit in Frameworks */,
+				CAF0C00C3300000000A1B2C3 /* PairingKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -194,6 +221,7 @@
 				CA3469093049D39500C50190 /* AppAttestTestAppTests */,
 				CA3469133049D39500C50190 /* AppAttestTestAppUITests */,
 				CAE0B0043200000000A1B2C3 /* PairingTestApp */,
+				CAF0C0043300000000A1B2C3 /* SessionTestApp */,
 				CABD5C8B30442E240041D0B0 /* Frameworks */,
 				CA2506112E8D7367004381A3 /* Products */,
 			);
@@ -209,6 +237,7 @@
 				CA3469063049D39400C50190 /* AppAttestTestAppTests.xctest */,
 				CA3469103049D39500C50190 /* AppAttestTestAppUITests.xctest */,
 				CAE0B0033200000000A1B2C3 /* PairingTestApp.app */,
+				CAF0C0033300000000A1B2C3 /* SessionTestApp.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -389,6 +418,30 @@
 			productReference = CAE0B0033200000000A1B2C3 /* PairingTestApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		CAF0C0083300000000A1B2C3 /* SessionTestApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CAF0C00B3300000000A1B2C3 /* Build configuration list for PBXNativeTarget "SessionTestApp" */;
+			buildPhases = (
+				CAF0C0063300000000A1B2C3 /* Sources */,
+				CAF0C0053300000000A1B2C3 /* Frameworks */,
+				CAF0C0073300000000A1B2C3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CAF0C0043300000000A1B2C3 /* SessionTestApp */,
+			);
+			name = SessionTestApp;
+			packageProductDependencies = (
+				CAF0C0013300000000A1B2C3 /* SessionKit */,
+				CAF0C00D3300000000A1B2C3 /* PairingKit */,
+			);
+			productName = SessionTestApp;
+			productReference = CAF0C0033300000000A1B2C3 /* SessionTestApp.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -424,6 +477,9 @@
 					CAE0B0083200000000A1B2C3 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
+					CAF0C0083300000000A1B2C3 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
 				};
 			};
 			buildConfigurationList = CA25060B2E8D7367004381A3 /* Build configuration list for PBXProject "SecureChat" */;
@@ -451,6 +507,7 @@
 				CA3469053049D39400C50190 /* AppAttestTestAppTests */,
 				CA34690F3049D39500C50190 /* AppAttestTestAppUITests */,
 				CAE0B0083200000000A1B2C3 /* PairingTestApp */,
+				CAF0C0083300000000A1B2C3 /* SessionTestApp */,
 			);
 		};
 /* End PBXProject section */
@@ -505,6 +562,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CAF0C0073300000000A1B2C3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -551,6 +615,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAE0B0063200000000A1B2C3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CAF0C0063300000000A1B2C3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -1053,6 +1124,68 @@
 			};
 			name = Release;
 		};
+		CAF0C0093300000000A1B2C3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PZH5BJLYFE;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SessionTestApp/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wapdir.simone.SessionTestApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		CAF0C00A3300000000A1B2C3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PZH5BJLYFE;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SessionTestApp/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wapdir.simone.SessionTestApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1128,6 +1261,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		CAF0C00B3300000000A1B2C3 /* Build configuration list for PBXNativeTarget "SessionTestApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CAF0C0093300000000A1B2C3 /* Debug */,
+				CAF0C00A3300000000A1B2C3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1164,6 +1306,14 @@
 			productName = RegistrationKit;
 		};
 		CAE0B0013200000000A1B2C3 /* PairingKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PairingKit;
+		};
+		CAF0C0013300000000A1B2C3 /* SessionKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SessionKit;
+		};
+		CAF0C00D3300000000A1B2C3 /* PairingKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PairingKit;
 		};

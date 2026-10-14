@@ -18,6 +18,22 @@ services:
       redis:
         condition: service_started
 
+  # The relay (RelayServer/, session-workflow.md). Reads the session tokens
+  # this file's auth-server writes to Redis. RELAY_DEV_CLAIMED_ACCOUNTS lets
+  # Simulators and harnesses connect without a token: development only,
+  # off unless .env sets it to true.
+  relay:
+    build: ../RelayServer
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: 8081
+      REDIS_URL: redis://redis:6379
+      RELAY_DEV_CLAIMED_ACCOUNTS: ${RELAY_DEV_CLAIMED_ACCOUNTS:-false}
+    depends_on:
+      redis:
+        condition: service_started
+
   postgres:
     image: postgres:17-alpine
     environment:

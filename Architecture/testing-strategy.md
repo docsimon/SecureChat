@@ -11,7 +11,9 @@ then together with the others inside SecureChat.
 | Module tests (`xcodebuild test -scheme <Kit>` in `Modules/<Kit>`) | the module | everything around it | every change |
 | SecureChat unit tests (`SecureChatTests`) | one app type at a time | its dependencies | every change |
 | SecureChat integration tests (`SecureChatTests/Integration`) | every module and app type between the user and the outside world | Apple, the network, the Keychain | every change |
-| Feature harnesses (`AppAttestTestApp`, `PairingTestApp`) | the feature on a phone; App Attest (development) only in `AppAttestTestApp` | whatever the harness chooses | when a feature's Apple or hardware behaviour changes |
+| Relay tests (`./gradlew test` in `RelayServer/`) | the relay in process, real WebSocket clients | the Auth Server's token store | every relay change |
+| Live relay tests (`SessionKit`, opt-in via `TEST_RUNNER_SESSIONKIT_LIVE_RELAY`) | `SessionService`, `RelayClient` and the docker relay | identities (development accounts) | when the client or relay changes |
+| Feature harnesses (`AppAttestTestApp`, `PairingTestApp`, `SessionTestApp`) | the feature on a phone; App Attest (development) only in `AppAttestTestApp` | whatever the harness chooses | when a feature's Apple or hardware behaviour changes |
 | "SecureChat Real Registration" scheme | the whole app on a phone: development App Attest, the local Auth Server, real cameras | nothing | only when the user decides to |
 
 ## Rules

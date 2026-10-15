@@ -210,4 +210,26 @@ final class SessionIntegrationTests: XCTestCase {
         XCTAssertEqual(relay.connectionAttempts, 2, "a socket that opens and closes at once is a failure, not a success")
         XCTAssertNotEqual(connection.state, .connected)
     }
+
+    func test_whenTheContactLeaves_theirDotTurnsRed_andTheNextMessageStartsAfresh() async throws {
+        let (ada, bob) = try await pairedDevices()
+        let adaConnection = try await connect(ada), bobConnection = try await connect(bob)
+        let adaChat = try conversation(on: ada, with: bob, over: adaConnection)
+        adaChat.appeared()
+        try await waitUntil("session open") { adaChat.presence == .online }
+
+        bobConnection.setActive(false)   // Bob sends the app to the background
+
+        try await waitUntil("told Bob left") { adaChat.presence == .offline }
+        XCTAssertEqual(adaChat.status, .offline)
+
+        bobConnection.setActive(true)
+        try await waitUntil("Bob back") { bobConnection.state == .connected }
+        adaChat.draft = "Welcome back"
+        adaChat.send()
+        try await waitUntil("delivered on a new session") {
+            bob.messages.messages(with: try ada.accountUUID).map(\.text) == ["Welcome back"]
+        }
+        XCTAssertEqual(adaChat.presence, .online)
+    }
 }

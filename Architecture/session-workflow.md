@@ -100,6 +100,8 @@ one place (`RoutingID`) so a derived rendezvous id can replace it later
 - Routing map in memory: account → connections. A frame for an account with
   no connection gets a "peer unavailable" frame back. Nothing is stored;
   the entry disappears with the connection.
+- "Contact left": a closing connection's two-way correspondents get an
+  unasked "peer unavailable" naming it (see "Presence").
 - The token is checked at connect only; an open connection outlives the
   token's 15 minutes. Noted, not handled in slice 1.
 - Rate limits (§9) are not in slice 1.
@@ -118,7 +120,7 @@ one place (`RoutingID`) so a derived rendezvous id can replace it later
 | Piece | State |
 |---|---|
 | `SessionKit` | Noise `KK` matches the published test vector (handshake hash and transport). 18 unit tests: stranger refused without a reply, contact id without the key refused, simultaneous open, offline peer, silent peer abandoned, peer restart, tampering, every frame 8,320 bytes, too-long text, nothing queued for a non-contact. `RelayClient` and `SessionService` built |
-| Relay | `RelayServer/`, 7 tests (delivery with sender id rewritten, peer unavailable, wrong size closes, no or wrong credentials refused, dev flag off refuses claimed accounts). Runs in docker on 8081; logs connection counts only, never ids |
+| Relay | `RelayServer/`, 9 tests (delivery with sender id rewritten, peer unavailable, wrong size closes, no or wrong credentials refused, dev flag off refuses claimed accounts; since 2026-10-15 "contact left" sent after a two-way exchange and not after a one-way one). Runs in docker on 8081; logs connection counts only, never ids |
 | End to end | `LiveRelayTests` (opt-in, `TEST_RUNNER_SESSIONKIT_LIVE_RELAY=ws://localhost:8081/relay`): two `SessionService`s open a session through the docker relay and exchange text; an offline contact is reported. Passed 2026-10-14 |
 | `SessionTestApp` | Used by hand on 2026-10-15: contacts added by pasted code, both connected, session opened, messages sent both ways; "unanswered" (contact removed on one side) and "offline" (one side disconnected) also seen |
 | SecureChat | Built 2026-10-15 (see "SecureChat" below). SecureChat tests pass on the Simulator, 7 of them session integration tests. **On phones, 2026-10-15** (SecureChat on the iPhone 16 Plus, `SessionTestApp` on the iPhone X, development accounts): paired face to face, messages both ways, offline, didn't answer, background and back; reported working by the user |
@@ -175,19 +177,26 @@ phone has learned on the current connection:
 | red | the last try found them offline, or they did not answer |
 | none | nothing tried yet on this connection, a handshake still running, or this phone is not connected |
 
-**Known limit: green goes stale.** When the contact closes the app, nothing
-tells this phone; the dot stays green until the next message comes back
-"offline". The chat list shows no dot for contacts whose chat has not been
-opened since the app came to the foreground (no probing: a handshake with
-every contact on each connect was judged too much for the MVP).
+**"Contact left" (relay, 2026-10-15).** When a connection closes, the
+relay sends the same "peer unavailable" frame, unasked and naming the
+leaver, to every connection it routed frames **both ways** with during that
+connection. The app needs no change: SessionKit already drops the session
+on that frame, and the dot turns red. Rules:
 
-**To do: the relay's "contact left" notice.** When a connection closes, the
-relay sends a "peer unavailable" frame to the connections that exchanged
-frames with it during that connection, and the app turns their dot red.
-Costs: the relay keeps, per connection and only while it is open, the set of
-accounts it routed frames to and from. Decide whether that state is
-acceptable (architecture-decisions.md: routing state deleted on disconnect,
-which this still is) before building it.
+- Two-way only. Someone who merely wrote to this phone (a stranger, a
+  contact it removed and so ignores) learns nothing about it leaving.
+- Also on "replaced" (the app reconnected): the sessions of the old
+  connection are gone either way, so the other side should start afresh.
+- The relay keeps, per open connection, the accounts it delivered frames
+  to and from; the sets go with the connection (§1 still holds).
+
+**Known limits.**
+- Coming back is not announced: after "left", the dot stays red until this
+  phone tries again (opening the chat, sending) or they open a session.
+  Announcing arrivals would need the relay to know who wants to hear about
+  whom, i.e. each phone's contact list. Not done.
+- The chat list shows no dot for contacts whose chat has not been opened
+  since the app came to the foreground (no probing).
 
 ### Phone test (done 2026-10-15)
 
@@ -204,9 +213,7 @@ two Simulators.
 ## Next
 
 1. Message storage B: per-contact encryption of the message text.
-2. Relay "contact left" notice, so the presence dot does not stay green
-   (see "Presence").
-3. Slice 2: Double Ratchet on the same frames.
+2. Slice 2: Double Ratchet on the same frames.
 
 ## Known limits (reviewed 2026-10-14, SecureChat items 2026-10-15)
 

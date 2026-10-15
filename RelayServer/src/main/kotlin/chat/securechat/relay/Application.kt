@@ -15,9 +15,12 @@ import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import redis.clients.jedis.JedisPooled
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 
 private val logger = LoggerFactory.getLogger("chat.securechat.relay.Application")
@@ -41,11 +44,29 @@ class RedisSessionTokens(private val redis: JedisPooled) : SessionTokens {
         redis.get("session:token:$token")?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 }
 
+/**
+ * One open connection and who it has talked with, in memory, gone with it
+ * (architecture-decisions.md §1: routing state is deleted on disconnect).
+ */
+internal class Client(val session: DefaultWebSocketServerSession, val account: UUID) {
+    /** Accounts this connection delivered frames to. */
+    val sentTo: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+    /** Accounts whose frames were delivered to this connection. */
+    val receivedFrom: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * Who is told when this connection closes: frames went both ways.
+     * Someone who only wrote to us (a stranger, a contact we removed and
+     * so ignore) learns nothing about our leaving.
+     */
+    fun conversations(): Set<UUID> = sentTo intersect receivedFrom
+}
+
 fun Application.relayModule(config: Config, tokens: SessionTokens) {
     if (config.devClaimedAccounts) {
         logger.warn("RELAY_DEV_CLAIMED_ACCOUNTS is ON: any client can claim any account. Development only.")
     }
-    val router = Router<DefaultWebSocketServerSession>()
+    val router = Router<Client>()
 
     install(WebSockets) {
         pingPeriod = 30.seconds
@@ -62,7 +83,8 @@ fun Application.relayModule(config: Config, tokens: SessionTokens) {
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
                 return@webSocket
             }
-            router.register(account, this)?.close(CloseReason(CloseReason.Codes.NORMAL, "replaced"))
+            val client = Client(this, account)
+            router.register(account, client)?.session?.close(CloseReason(CloseReason.Codes.NORMAL, "replaced"))
             logger.info("Connected ({} online)", router.size)
             try {
                 for (frame in incoming) {
@@ -78,12 +100,26 @@ fun Application.relayModule(config: Config, tokens: SessionTokens) {
                         send(Frame.Binary(true, Frames.peerUnavailable(destination)))
                     } else {
                         // A peer that just went away is the same as one that is offline.
-                        runCatching { peer.send(Frame.Binary(true, Frames.fromSender(bytes, account))) }
+                        runCatching { peer.session.send(Frame.Binary(true, Frames.fromSender(bytes, account))) }
+                            .onSuccess {
+                                client.sentTo.add(destination)
+                                peer.receivedFrom.add(account)
+                            }
                             .onFailure { send(Frame.Binary(true, Frames.peerUnavailable(destination))) }
                     }
                 }
             } finally {
-                router.unregister(account, this)
+                router.unregister(account, client)
+                // "Contact left" (session-workflow.md, "Presence"): the same
+                // frame as for an offline peer, unasked. Their app drops its
+                // session with us and shows us offline. Also on "replaced":
+                // the sessions of this connection are gone either way.
+                withContext(NonCancellable) {
+                    for (other in client.conversations()) {
+                        val peer = router.connection(other) ?: continue
+                        runCatching { peer.session.send(Frame.Binary(true, Frames.peerUnavailable(account))) }
+                    }
+                }
                 logger.info("Disconnected ({} online)", router.size)
             }
         }

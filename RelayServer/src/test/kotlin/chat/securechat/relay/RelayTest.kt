@@ -13,6 +13,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -129,5 +130,69 @@ class RelayTest {
         assertNull(authenticate(null, bob.toString(), prod, tokens))
         assertNull(authenticate(adaToken, null, prod, tokens), "a token without the Bearer prefix")
         assertNull(authenticate(null, "not-a-uuid", dev, tokens))
+    }
+
+    @Test
+    fun `when someone leaves, the accounts they exchanged frames with are told`() = testApplication {
+        relay()
+        val client = createClient { install(WebSockets) }
+        coroutineScope {
+            val bobReady = CompletableDeferred<Unit>()
+            val adaGone = CompletableDeferred<Unit>()
+            val notice = CompletableDeferred<ByteArray>()
+            launch {
+                client.webSocket("/relay", request = { header("X-Dev-Account", bob.toString()) }) {
+                    send(Frame.Binary(true, deliver(UUID.randomUUID(), 0)))
+                    nextBinary()                                   // registered
+                    bobReady.complete(Unit)
+                    nextBinary()                                   // Ada's frame
+                    send(Frame.Binary(true, deliver(ada, 2)))      // Bob answers: two-way
+                    adaGone.await()
+                    notice.complete(nextBinary())
+                }
+            }
+            bobReady.await()
+            client.webSocket("/relay", request = { header("X-Dev-Account", ada.toString()) }) {
+                send(Frame.Binary(true, deliver(bob, 1)))
+                nextBinary()                                       // Bob's answer
+            }
+            adaGone.complete(Unit)
+            val frame = notice.await()
+            assertEquals(Frames.KIND_PEER_UNAVAILABLE, frame[1])
+            assertContentEquals(Frames.bytes(ada), frame.copyOfRange(2, 18))
+        }
+    }
+
+    @Test
+    fun `someone who only wrote to us learns nothing when we leave`() = testApplication {
+        relay()
+        val client = createClient { install(WebSockets) }
+        coroutineScope {
+            val bobGone = CompletableDeferred<Unit>()
+            val adaSent = CompletableDeferred<Unit>()
+            val heard = CompletableDeferred<ByteArray?>()
+            launch {
+                client.webSocket("/relay", request = { header("X-Dev-Account", ada.toString()) }) {
+                    adaSent.await()
+                    send(Frame.Binary(true, deliver(bob, 1)))      // Bob reads it, never answers
+                    bobGone.await()
+                    heard.complete(withTimeoutOrNull(500) {
+                        while (true) {
+                            val frame = incoming.receive()
+                            if (frame is Frame.Binary) return@withTimeoutOrNull frame.readBytes()
+                        }
+                        @Suppress("UNREACHABLE_CODE") null
+                    })
+                }
+            }
+            client.webSocket("/relay", request = { header("X-Dev-Account", bob.toString()) }) {
+                send(Frame.Binary(true, deliver(UUID.randomUUID(), 0)))
+                nextBinary()                                       // registered
+                adaSent.complete(Unit)
+                nextBinary()                                       // Ada's frame, ignored
+            }
+            bobGone.complete(Unit)
+            assertNull(heard.await(), "a one-way sender must not be told that Bob left")
+        }
     }
 }

@@ -225,7 +225,9 @@ private final class FakeAuthServerProtocol: URLProtocol, @unchecked Sendable {
 /// Server issued, or a claimed account when `acceptsClaimedAccounts`), and,
 /// like the real one, a refused client sees the socket open and then close;
 /// the sender's id written into every delivered frame, "peer unavailable"
-/// for an account with no connection, nothing stored.
+/// for an account with no connection, nothing stored; and, when a
+/// connection closes, "peer unavailable" naming it to the accounts it
+/// exchanged frames with both ways ("contact left").
 @MainActor
 final class InProcessRelay {
 
@@ -268,12 +270,17 @@ final class InProcessRelay {
 
     fileprivate func detach(_ connection: Connection, as routingID: Data) {
         if connections[routingID] === connection { connections[routingID] = nil }
+        for other in connection.sentTo.intersection(connection.receivedFrom) {
+            connections[other]?.onFrame?(try! RelayFrame(kind: .peerUnavailable, peer: routingID).encoded())
+        }
     }
 
     fileprivate func route(_ data: Data, from sender: Data) throws {
         let frame = try RelayFrame(decoding: data)
         guard frame.kind == .deliver else { return }
         if let receiver = connections[frame.peer] {
+            connections[sender]?.sentTo.insert(frame.peer)
+            receiver.receivedFrom.insert(sender)
             receiver.onFrame?(try RelayFrame(kind: .deliver, peer: sender, body: frame.body).encoded())
         } else {
             connections[sender]?.onFrame?(try RelayFrame(kind: .peerUnavailable, peer: frame.peer).encoded())
@@ -290,6 +297,9 @@ final class InProcessRelay {
         private weak var relay: InProcessRelay?
         private let credential: RelayClient.Credential
         private var routingID: Data?
+        /// Routing ids frames went to and came from, on this connection.
+        fileprivate var sentTo: Set<Data> = []
+        fileprivate var receivedFrom: Set<Data> = []
 
         fileprivate init(relay: InProcessRelay, credential: RelayClient.Credential) {
             self.relay = relay

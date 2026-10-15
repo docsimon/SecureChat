@@ -16,6 +16,7 @@
 		CAE0B00C3200000000A1B2C3 /* PairingKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAE0B0013200000000A1B2C3 /* PairingKit */; };
 		CAF0C0023300000000A1B2C3 /* SessionKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAF0C0013300000000A1B2C3 /* SessionKit */; };
 		CAF0C00C3300000000A1B2C3 /* PairingKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAF0C00D3300000000A1B2C3 /* PairingKit */; };
+		CAF0D0023400000000A1B2C3 /* SessionKit in Frameworks */ = {isa = PBXBuildFile; productRef = CAF0D0013400000000A1B2C3 /* SessionKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -149,6 +150,7 @@
 				CABD5C8D30442E240041D0B0 /* AppAttestKit in Frameworks */,
 				CAD0A0023100000000A1B2C3 /* RegistrationKit in Frameworks */,
 				CAE0B00C3200000000A1B2C3 /* PairingKit in Frameworks */,
+				CAF0D0023400000000A1B2C3 /* SessionKit in Frameworks */,
 				CA70F2A52EA3BEAA0098F0F9 /* SQLite in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -274,6 +276,7 @@
 				CABD5C8C30442E240041D0B0 /* AppAttestKit */,
 				CAD0A0013100000000A1B2C3 /* RegistrationKit */,
 				CAE0B0013200000000A1B2C3 /* PairingKit */,
+				CAF0D0013400000000A1B2C3 /* SessionKit */,
 			);
 			productName = SecureChat;
 			productReference = CA2506102E8D7367004381A3 /* SecureChat.app */;
@@ -1316,6 +1319,10 @@
 		CAF0C00D3300000000A1B2C3 /* PairingKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PairingKit;
+		};
+		CAF0D0013400000000A1B2C3 /* SessionKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SessionKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -10,6 +10,7 @@ import SessionKit
 struct SessionHarnessView: View {
     @ObservedObject var model: SessionHarnessModel
     @State private var pastedCode = ""
+    @State private var pairingFaceToFace = false
 
     var body: some View {
         NavigationStack {
@@ -22,6 +23,8 @@ struct SessionHarnessView: View {
                 }
 
                 Section {
+                    Button("Pair face to face") { pairingFaceToFace = true }
+                        .disabled(model.pairingCode.isEmpty)
                     TextField("Paste their pairing code", text: $pastedCode)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -33,7 +36,7 @@ struct SessionHarnessView: View {
                 } header: {
                     Text("Add a contact")
                 } footer: {
-                    Text("Copy the code on the other Simulator or phone and paste it here, on both sides. Simulators share the Mac's clipboard.")
+                    Text("Face to face: hold this phone and the other (SecureChat or this harness) screen to screen until both vibrate. Without cameras, copy the code on the other Simulator or phone and paste it here, on both sides. Simulators share the Mac's clipboard.")
                 }
 
                 Section("Relay") {
@@ -73,6 +76,9 @@ struct SessionHarnessView: View {
                 }
             }
             .navigationTitle("Sessions")
+            .fullScreenCover(isPresented: $pairingFaceToFace) {
+                FaceToFacePairingSheet(model: model)
+            }
             .navigationDestination(for: UUID.self) { account in
                 if let contact = model.contacts.first(where: { $0.accountUUID == account }) {
                     if let service = model.service {

@@ -1,25 +1,18 @@
 //
-//  DatabaseStrategy.swift
-//  SecureChat
+// DatabaseStrategy.swift
+// SecureChat
 //
-//  Created by doc on 06/10/2025.
-//
+// Created by Simone Barbara on 18/10/2025.
+// All Rights Reserved.
 
 import Foundation
 import PairingKit
 
 protocol DatabaseStrategy {
-    func saveChat(chat: Chat)
-    func addGuest(guest: Guest)
-    func update(guest: Guest)
-    func saveMessage(message: Message)
-    func getMessage(id: MessageID) -> Message?
-    func getGuest(id: GuestID) throws -> Guest
-    func getChat(id: ChatID) -> Chat?
-    var chatList: [ChatListModel] { get }
-    func bootstrap() throws
-    func createChat(title: String)
-    func getOwner() throws -> Guest
     func fetchContacts() throws -> [PairedContact]
     func addContact(_ contact: PairedContact) throws
+    /// Oldest first.
+    func fetchMessages() throws -> [StoredMessage]
+    func addMessage(_ message: StoredMessage) throws
+    func updateStatus(of ids: [UUID], to status: StoredMessage.Status) throws
 }

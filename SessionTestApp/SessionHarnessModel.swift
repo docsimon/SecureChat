@@ -4,8 +4,8 @@
 //
 //  HARNESS-ONLY state: a throwaway identity in UserDefaults (the private key
 //  is kept here, unlike PairingTestApp, because sessions need it), contacts
-//  added by pasting a pairing code, and the SessionService that SecureChat
-//  uses too.
+//  added by pasting a pairing code or face to face (to pair with SecureChat
+//  on another phone), and the SessionService that SecureChat uses too.
 //
 
 import Foundation
@@ -109,6 +109,22 @@ final class SessionHarnessModel: ObservableObject {
             }
         } catch {
             record("Code refused: \(error)", isError: true)
+        }
+    }
+
+    /// For `FaceToFacePairing`, which decides for itself what is new.
+    func add(_ contact: PairedContact) {
+        contacts.append(contact)
+        saveContacts()
+        record("Added \(contact.displayName) face to face")
+    }
+
+    func scannerFailed(_ failure: QRCodeScannerView.Failure) {
+        switch failure {
+        case .cameraUnavailable:
+            record("No camera here (the Simulator has none). Paste a code instead.", isError: true)
+        case .accessDenied:
+            record("Camera access denied. Allow it in Settings, or paste a code.", isError: true)
         }
     }
 

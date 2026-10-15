@@ -40,16 +40,26 @@ then together with the others inside SecureChat.
 | `IdentityKeyStore.inMemory()` | `RegistrationKit` | No: `@_spi(Testing)`, Debug only |
 | `IdentityKeyStore`/`RegisteredAccountStore` values, `RealAttestationTransport(session:)` | `RegistrationKit` | Yes, with `.live` / `.shared` defaults |
 | `RegistrationViewModel(identity:account:)`, `LocalIdentityProvider(identityStore:accountStore:)` | SecureChat | Yes, with `.live` defaults |
+| `SessionClient(baseURL:signer:session:)` | `RegistrationKit` | Yes, `.shared` default |
+| `RelayTransport`, `SessionService(transport:localIdentity:localAccount:handshakeTimeout:contactKey:)` | `SessionKit` | Yes |
+| `RelayConnection(identity:credential:makeTransport:contacts:messages:handshakeTimeout:retryDelays:)`, `DatabaseLocation.prepare(in:legacyDirectory:)` | SecureChat | Yes; `DependencyManager` passes the real ones |
 
 ## Fakes (`SecureChatTests/Integration/IntegrationFakes.swift`)
 
 - `FakeAppleAttestService`: always supported; attests with an object whose
   aaguid is `appattestdevelop`.
 - `InMemoryAttestationKeyStore`: AppAttestKit's Keychain state.
-- `FakeAuthServer`: `/challenge` and `/register` behind a `URLProtocol`.
-  Keeps the rules the app relies on (challenge issued for one identity key,
-  used once, same key at `/register`, development attestations only); it
-  does not verify Apple's signature.
+- `FakeAuthServer`: `/challenge`, `/register`, `/session/nonce` and
+  `/session` behind a `URLProtocol`. Keeps the rules the app relies on
+  (challenge issued for one identity key, used once, same key at
+  `/register`, development attestations only, a nonce used once, tokens only
+  for registered accounts); it does not verify Apple's signatures.
+- `InProcessRelay`: the relay's rules in process (credentials at connect,
+  sender id written into delivered frames, "peer unavailable", nothing
+  stored), and `drop(_:)` to cut a connection.
+
+`IntegrationDevice` (same folder) is one phone wired the way
+`DependencyManager` wires the real one; both integration test files use it.
 
 ## Not covered yet
 
@@ -57,4 +67,7 @@ then together with the others inside SecureChat.
   pieces the same way, but not through it.
 - The transport's error mapping (4xx/5xx, expired challenge) at the
   integration level.
-- Sessions and chat: they get their own integration tests when built.
+- File protection (`NSFileProtectionComplete`) is only asserted on a phone:
+  the Simulator has no Data Protection.
+- The real `RelayClient` against the docker relay is covered by SessionKit's
+  live relay tests, not by SecureChat's.

@@ -3,8 +3,8 @@
 //  SecureChat
 //
 //  What this device puts in its pairing code: the identity public key and
-//  the account id it registered with. PairingKit is handed these; it never
-//  loads them itself.
+//  the account id it registered with. Sessions also get the private key.
+//  PairingKit and SessionKit are handed these; they never load them.
 //
 
 import Foundation
@@ -13,6 +13,14 @@ import RegistrationKit
 
 struct LocalIdentity: Equatable {
     let identityPublicKey: Data
+    let accountUUID: UUID
+}
+
+/// What sessions need: the identity PRIVATE key (the Noise static key) and
+/// the account id the relay knows this device by. A separate type, so the
+/// pairing path never holds the private key.
+struct SessionIdentity {
+    let privateKey: Curve25519.KeyAgreement.PrivateKey
     let accountUUID: UUID
 }
 
@@ -37,37 +45,49 @@ struct LocalIdentityProvider {
 #endif
 
     func load() throws -> LocalIdentity {
+        let identity = try loadForSessions()
+        return LocalIdentity(identityPublicKey: identity.privateKey.publicKey.rawRepresentation,
+                             accountUUID: identity.accountUUID)
+    }
+
+    func loadForSessions() throws -> SessionIdentity {
 #if DEBUG
-        if usesDebugIdentity { return DebugLocalIdentity.loadOrCreate() }
+        if usesDebugIdentity { return DebugLocalIdentity.loadOrCreateForSessions() }
 #endif
         guard let key = try identityStore.loadExisting(),
               let uuid = accountStore.current.flatMap(UUID.init(uuidString:)) else {
             throw LocalIdentityError.notRegistered
         }
-        return LocalIdentity(identityPublicKey: key.publicKey.rawRepresentation, accountUUID: uuid)
+        return SessionIdentity(privateKey: key, accountUUID: uuid)
     }
 }
 
 #if DEBUG
 /// A made-up identity for Debug runs that skipped registration. The account
 /// id is known to no server. Kept in UserDefaults, away from the Keychain
-/// items the real registration owns, so the two can never be confused; the
-/// private key is kept because sessions will need it.
+/// items the real registration owns, so the two can never be confused. The
+/// relay knows this account only through its development flag.
 enum DebugLocalIdentity {
     private static let keyName = "debug.localIdentity.privateKey"
     private static let uuidName = "debug.localIdentity.accountUUID"
 
     static func loadOrCreate(defaults: UserDefaults = .standard) -> LocalIdentity {
+        let identity = loadOrCreateForSessions(defaults: defaults)
+        return LocalIdentity(identityPublicKey: identity.privateKey.publicKey.rawRepresentation,
+                             accountUUID: identity.accountUUID)
+    }
+
+    static func loadOrCreateForSessions(defaults: UserDefaults = .standard) -> SessionIdentity {
         if let raw = defaults.data(forKey: keyName),
            let key = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: raw),
            let uuid = defaults.string(forKey: uuidName).flatMap(UUID.init(uuidString:)) {
-            return LocalIdentity(identityPublicKey: key.publicKey.rawRepresentation, accountUUID: uuid)
+            return SessionIdentity(privateKey: key, accountUUID: uuid)
         }
         let key = Curve25519.KeyAgreement.PrivateKey()
         let uuid = UUID()
         defaults.set(key.rawRepresentation, forKey: keyName)
         defaults.set(uuid.uuidString, forKey: uuidName)
-        return LocalIdentity(identityPublicKey: key.publicKey.rawRepresentation, accountUUID: uuid)
+        return SessionIdentity(privateKey: key, accountUUID: uuid)
     }
 }
 #endif

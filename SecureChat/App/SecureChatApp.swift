@@ -9,12 +9,19 @@ import SwiftUI
 
 @main
 struct SecureChatApp: App {
-    
-    let dep = DependencyManager()
-    
+
+    /// Built when the first window appears, not at launch: the database is
+    /// unreadable while the phone is locked (`DatabaseLocation`), and iOS
+    /// may start ("prewarm") an app's process before the phone is unlocked.
+    @State private var dep: DependencyManager?
+
     var body: some Scene {
         WindowGroup {
-            RootView(dep: dep, registrationViewModel: dep.registrationViewModel)
+            if let dep {
+                RootView(dep: dep, registrationViewModel: dep.registrationViewModel)
+            } else {
+                Color.clear.onAppear { dep = DependencyManager() }
+            }
         }
     }
 }

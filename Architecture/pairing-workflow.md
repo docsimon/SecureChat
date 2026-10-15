@@ -125,9 +125,54 @@ Because both cameras keep watching, the code can say one more thing:
 
 The rules of one attempt are `FaceToFacePairing` in `PairingKit`: the view
 shows `codeToShow`, feeds it every scanned text, and signals the event it
-returns. A contact is stored as soon as its code is read, not held back
-until the pairing is mutual, so pulling the phones apart early never leaves
-a side with less than it read.
+returns.
+
+**Saved only on completion (decided with the user, 2026-10-15; replaces
+"stored as soon as read").** A phone saves the contact only when it knows
+both sides have each other's key: their code read, and their code saying
+"I have yours". If that confirmation does not come within 5 s of reading
+their code, the attempt is aborted and nothing is saved.
+
+**The one case this cannot rule out.** Over a one-way channel there is
+always a last code whose sender cannot know it was read. The phone that
+completes first has saved the contact; if the other then times out, only
+one side has it (its messages show "didn't answer"). Pairing again repairs
+it: the first phone already has the contact, the other saves it, both
+complete. To make this rare, the phone that completes keeps its code up for
+3 s and vibrates only after 1 s, so nobody pulls away before the other phone
+has read it. 1 s, 3 s and 5 s are starting values, to be tuned on phones
+(the bench logs the gap between "read their code" and "paired both ways").
+
+## Two screens (2026-10-15)
+
+1. **Start:** what to do, how the last attempt ended (paired, didn't
+   finish, nothing read, refused), and "Pair". It scrolls, so any text size
+   works.
+2. **Code:** only the QR code, as large as the screen allows, white, full
+   brightness, no auto-lock. The front camera reads unseen; the rear one
+   shows a small viewfinder to aim with. "Done" goes back. After 15 s
+   without reading anything it goes back by itself, with the error buzz.
+
+Feedback, since nobody sees their screen: a tap when their code is read,
+the full vibration and a sound on completion, an error buzz for a refused
+code, a timeout, or nothing read.
+
+**On phones, 2026-10-15:** SecureChat (iPhone 16 Plus) and
+`SessionTestApp` (iPhone X) paired with the two screens: saved on both
+after completion. Pulling apart early: see below.
+
+**Pulled apart after one read (seen on phones, 2026-10-15).** If only one
+phone has read the other, that one times out after 5 s and says "didn't
+finish"; the other has read nothing and nothing tells it the attempt is
+over. It was left on its code for 60 s; now it stops after 15 s with the
+error buzz and "the other phone's code wasn't read". Neither saves
+anything. 15 s is counted from opening the code screen, so it also covers
+bringing the phones together: a value to tune, like 1, 3 and 5 s.
+
+Debug builds add a "Debug" button on both screens: this phone's code as
+text, a field to use a code by hand (the Simulator has no camera; there the
+timeouts are minutes, not seconds), the attempt's state, and each app's own
+lines (account id; for the harnesses, relay or bench settings).
 
 Nobody sees their own screen in this position, so the result must be felt or
 heard. Confirmed on both phones on 2026-10-13: the full vibration
@@ -181,8 +226,26 @@ it. An attacker would have to replace what is on the screen.
 - **The Simulator has no camera.** The harness has "Copy code as text" and a
   paste field, so two Simulators, or a Simulator and a phone, can pair. A
   phone can also scan the code off a Simulator window on the Mac.
-- **Face to face in the harness:** "Pair face to face (front camera)".
-  Read times are written to the harness log. Pairing both ways was
+- **One pairing flow, in PairingKit** (since 2026-10-15):
+  `FaceToFacePairingView` (the two screens above and the debug sheet),
+  `PairingSignal` (vibration, sound, refusal wording) and `PairingTiming`. SecureChat,
+  `PairingTestApp` and `SessionTestApp` all show it, so every iteration of
+  how pairing looks and feels is tried on the bench and phones exactly as
+  it ships. Hosts add only their own: which scans count and what is logged
+  (`scan:`), and lines in the debug sheet (the bench's error-correction
+  toggle).
+- **Previews** (`FaceToFacePairingView+Previews.swift`, Debug only): both
+  screens in every state (start: fresh, paired, timed out with a 54-byte
+  name, nothing read, refused, camera denied, largest text, dark; code:
+  looking, their code read, camera denied, no camera, largest text in
+  dark). The camera window is a still. Open the file in Xcode with the
+  canvas on to iterate without phones.
+- The large-text problem of the one-screen version (title cut off, QR at
+  half width) is what led to the two screens; the code screen keeps the QR
+  at full width at the largest text size.
+- **Face to face in the harness:** "Pair face to face (front camera)", on
+  the shared screen (`FaceToFaceBenchView`). Read times are written to the
+  harness log. Pairing both ways was
   confirmed on the two phones on 2026-10-13, with the attempt's rules still
   inside the harness view; they have since moved into `PairingKit`
   (`FaceToFacePairing`) and that version has not been run on phones.
@@ -210,8 +273,8 @@ it. An attacker would have to replace what is on the screen.
 | Piece | Where |
 |---|---|
 | Entry point | Person icon, top left of the chat list → "Add contact" sheet |
-| Screen | `View/PairingView.swift`: asks for a name once, then face to face with the rear camera as fallback |
-| View model | `Pairing/PairingViewModel.swift`, wrapping `FaceToFacePairing` |
+| Screen | `View/PairingView.swift`: asks for a name once, then PairingKit's `FaceToFacePairingView` (rear camera as fallback) |
+| View model | `Pairing/PairingViewModel.swift`, wrapping `FaceToFacePairing`; `scanned` returns the event to signal, or nil when the contact could not be saved (at completion, when saving happens) |
 | Who we are | `Pairing/LocalIdentity.swift`: `IdentityKeyStore` + `RegisteredAccountStore`, or the Debug stand-in |
 | Display name | `ProfileStore` (`UserDefaults`), asked for on first use |
 | Storage | `contacts` table (key is the primary key, account id unique), `ContactRepository` |

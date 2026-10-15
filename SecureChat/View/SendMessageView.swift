@@ -8,41 +8,39 @@
 import SwiftUI
 
 struct SendMessageView: View {
-    
-    @State var viewModel: ChatViewModelProtocol
-    
-    @State private var inputText: String = ""
+
+    @Bindable var viewModel: ConversationViewModel
+
     @FocusState private var isTextFieldFocused: Bool
-    
+
     var body: some View {
-        // Input Bar (sticky at bottom)
-        HStack(spacing: 8) {
-            TextField("Type a message...", text: $inputText)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .focused($isTextFieldFocused)
-                .submitLabel(.send)
-            
-            
-            Button {
-                let text = inputText
-                inputText = ""
-                Task {
-                    await viewModel.createMessage(with: text)
-                }
-            } label: {
-                Image(systemName: "paperplane.fill")
-                    .foregroundColor(.blue)
-                    .padding(8)
+        VStack(alignment: .leading, spacing: 4) {
+            if viewModel.draftIsTooLong {
+                Text("Too long for one message.")
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
-            .disabled(inputText.isEmpty)
+            // Input Bar (sticky at bottom)
+            HStack(spacing: 8) {
+                TextField("Type a message...", text: $viewModel.draft, axis: .vertical)
+                    .lineLimit(1...5)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .focused($isTextFieldFocused)
+
+                Button {
+                    viewModel.send()
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                        .padding(8)
+                }
+                .disabled(!viewModel.canSend)
+                .accessibilityLabel("Send")
+            }
         }
         .padding()
         .background(Color(UIColor.systemBackground))
-        .ignoresSafeArea(.keyboard) // Prevents input from jumping with keyboard
         .onAppear {
-            // Optional: Focus input on load
             isTextFieldFocused = true
         }
     }
 }
-

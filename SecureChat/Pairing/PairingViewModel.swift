@@ -4,14 +4,13 @@
 //
 //  Drives the "Add contact" screen: two phones held face to face, each
 //  showing its code and reading the other's (Architecture/pairing-workflow.md).
-//  The rules of the attempt are PairingKit's `FaceToFacePairing`; this adds
-//  what is the app's own: who we are, where contacts are stored, and how
-//  the result is signalled.
+//  The rules of the attempt are PairingKit's `FaceToFacePairing`, and the
+//  screen is PairingKit's `FaceToFacePairingView`; this adds what is the
+//  app's own: who we are, our name, where contacts are stored, and which
+//  scans count.
 //
 
 import Foundation
-import AudioToolbox
-import UIKit
 import PairingKit
 
 @MainActor @Observable
@@ -28,24 +27,17 @@ final class PairingViewModel {
     private(set) var phase: Phase = .needsName
     /// Bound to the name field while `phase` is `.needsName`.
     var draftName = ""
-    var camera: QRCodeScannerView.Camera = .front
-    /// Why the camera is not reading, when it is not. The code is still
-    /// shown: the other phone can read this one regardless.
-    private(set) var scannerProblem: QRCodeScannerView.Failure?
 
     @ObservationIgnored private let identity: () throws -> LocalIdentity
     @ObservationIgnored private let contacts: ContactRepository
     @ObservationIgnored private let profile: ProfileStore
-    @ObservationIgnored private let signal: (FaceToFacePairing.Event) -> Void
 
     init(identity: @escaping () throws -> LocalIdentity,
          contacts: ContactRepository,
-         profile: ProfileStore = ProfileStore(),
-         signal: @escaping (FaceToFacePairing.Event) -> Void = PairingViewModel.liveSignal) {
+         profile: ProfileStore = ProfileStore()) {
         self.identity = identity
         self.contacts = contacts
         self.profile = profile
-        self.signal = signal
         start()
     }
 
@@ -60,24 +52,28 @@ final class PairingViewModel {
         start()
     }
 
-    func scanned(_ text: String) {
-        guard case .pairing(let pairing) = phase, let event = pairing.scanned(text) else { return }
+    /// A code read by the camera. Returns what the screen should signal,
+    /// or nil for nothing.
+    func scanned(_ text: String) -> FaceToFacePairing.Event? {
+        guard case .pairing(let pairing) = phase, let event = pairing.scanned(text) else { return nil }
         // Storing may have failed inside `scanned`; then the phase has moved
         // on and there is nothing to celebrate.
-        guard case .pairing = phase else { return }
+        guard case .pairing = phase else { return nil }
         if case .refused(let error) = event {
             SCLogger.logger.info(message: "Pairing code refused: \(error)", category: .Pairing)
         }
-        signal(event)
+        return event
     }
+
+#if DEBUG
+    /// For the pairing debug sheet: the account id this phone pairs with.
+    var debugAccount: String {
+        (try? identity().accountUUID.uuidString) ?? "none (not registered)"
+    }
+#endif
 
     func scannerFailed(_ failure: QRCodeScannerView.Failure) {
-        scannerProblem = failure
-    }
-
-    func cameraChanged() {
-        scannerProblem = nil
-        if case .pairing(let pairing) = phase { pairing.restart() }
+        SCLogger.logger.info(message: "Pairing scanner unavailable: \(failure)", category: .Pairing)
     }
 
     // MARK: Private
@@ -115,21 +111,6 @@ final class PairingViewModel {
         } catch {
             SCLogger.logger.error(message: "Pairing: contact could not be saved", error: error, category: .Pairing)
             phase = .unavailable("The contact couldn't be saved. Please try again.")
-        }
-    }
-
-    /// Nobody sees their own screen while the phones face each other, so the
-    /// result has to be felt and heard. The full vibration is what was
-    /// confirmed on phones; `UIFeedbackGenerator` alone could not be felt.
-    static let liveSignal: (FaceToFacePairing.Event) -> Void = { event in
-        switch event {
-        case .readTheirs:
-            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-        case .completed:
-            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
-            AudioServicesPlaySystemSound(1016)
-        case .refused:
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
 }

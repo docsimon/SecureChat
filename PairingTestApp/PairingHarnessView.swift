@@ -27,7 +27,7 @@ struct PairingHarnessView: View {
             }
             .navigationTitle("Pairing harness")
             .sheet(isPresented: $isScanning) { scannerSheet }
-            .fullScreenCover(isPresented: $isFaceToFace) { FaceToFacePairingView(model: model) }
+            .fullScreenCover(isPresented: $isFaceToFace) { FaceToFaceBenchView(model: model) }
         }
     }
 

@@ -33,9 +33,12 @@ public final class SessionService: ObservableObject {
     /// Peers with an open session.
     @Published public private(set) var established: Set<UUID> = []
     public var onEvent: ((Event) -> Void)?
+    /// After `relayState` has changed (`$relayState` publishes before).
+    public var onRelayStateChange: ((RelayClient.State) -> Void)?
 
     private let engine: SessionEngine
-    private let relay: RelayClient
+    private let relay: RelayTransport
+    private let handshakeTimeout: UInt64
     /// Frames leave in the order they were encrypted: the receiver's Noise
     /// nonce counts them, so a reordered pair would end the session.
     private var lastSend: Task<Void, Never>?
@@ -47,18 +50,30 @@ public final class SessionService: ObservableObject {
     ///     contact, or nil for anyone else.
     /// The relay client keeps itself alive while connected: call
     /// `disconnect()` before letting go of this service.
-    public init(relayURL: URL,
-                credential: RelayClient.Credential,
+    public convenience init(relayURL: URL,
+                            credential: RelayClient.Credential,
+                            localIdentity: Curve25519.KeyAgreement.PrivateKey,
+                            localAccount: UUID,
+                            contactKey: @escaping (UUID) -> Data?) {
+        self.init(transport: RelayClient(url: relayURL, credential: credential),
+                  localIdentity: localIdentity, localAccount: localAccount, contactKey: contactKey)
+    }
+
+    /// Over any transport: the app passes a `RelayClient`, its integration
+    /// tests an in-process relay.
+    public init(transport: RelayTransport,
                 localIdentity: Curve25519.KeyAgreement.PrivateKey,
                 localAccount: UUID,
+                handshakeTimeout: UInt64 = SessionService.handshakeTimeout,
                 contactKey: @escaping (UUID) -> Data?) {
+        self.handshakeTimeout = handshakeTimeout
         engine = SessionEngine(localStatic: localIdentity,
                                localRoutingID: RoutingID.of(accountUUID: localAccount),
                                contactKey: { routingID in
                                    RoutingID.accountUUID(routingID).flatMap(contactKey)
                                        .flatMap { try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: $0) }
                                })
-        relay = RelayClient(url: relayURL, credential: credential)
+        relay = transport
         relay.onStateChange = { [weak self] state in self?.relayStateChanged(state) }
         relay.onFrame = { [weak self] frame in self?.handle(self?.engine.receive(frame)) }
     }
@@ -90,8 +105,8 @@ public final class SessionService: ObservableObject {
     private func watchHandshake(with peer: UUID) {
         let routingID = RoutingID.of(accountUUID: peer)
         guard engine.isHandshaking(with: routingID), handshakeTimeouts[peer] == nil else { return }
-        handshakeTimeouts[peer] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.handshakeTimeout)
+        handshakeTimeouts[peer] = Task { [weak self, timeout = handshakeTimeout] in
+            try? await Task.sleep(nanoseconds: timeout)
             guard let self, !Task.isCancelled else { return }
             self.handshakeTimeouts[peer] = nil
             self.handle(self.engine.abandonHandshake(with: routingID))
@@ -111,6 +126,7 @@ public final class SessionService: ObservableObject {
             handshakeTimeouts.values.forEach { $0.cancel() }
             handshakeTimeouts.removeAll()
         }
+        onRelayStateChange?(state)
     }
 
     private func handle(_ output: SessionEngine.Output?) {

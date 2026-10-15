@@ -121,72 +121,88 @@ one place (`RoutingID`) so a derived rendezvous id can replace it later
 | Relay | `RelayServer/`, 7 tests (delivery with sender id rewritten, peer unavailable, wrong size closes, no or wrong credentials refused, dev flag off refuses claimed accounts). Runs in docker on 8081; logs connection counts only, never ids |
 | End to end | `LiveRelayTests` (opt-in, `TEST_RUNNER_SESSIONKIT_LIVE_RELAY=ws://localhost:8081/relay`): two `SessionService`s open a session through the docker relay and exchange text; an offline contact is reported. Passed 2026-10-14 |
 | `SessionTestApp` | Used by hand on 2026-10-15: contacts added by pasted code, both connected, session opened, messages sent both ways; "unanswered" (contact removed on one side) and "offline" (one side disconnected) also seen |
-| SecureChat | Not started |
+| SecureChat | Built 2026-10-15 (see "SecureChat" below). 31 SecureChat tests pass on the Simulator, 7 of them session integration tests. Launched on the Simulator: chat list shown, relay connected with the development account. Not yet tested on phones |
 
 Running it: `docker compose up` in `AuthServer/` (the relay is part of it;
 `.env` sets `RELAY_DEV_CLAIMED_ACCOUNTS=true`). Relay tests:
 `./gradlew test` in `RelayServer/` with JDK 21.
 
-## Next: SecureChat (hand-off, 2026-10-15)
+## SecureChat (built 2026-10-15)
 
-The agreed next step. Opening a chat with a paired contact opens a session
-through the relay. What the code looks like today, and what is still to
-decide:
+### Decisions (with the user, 2026-10-15)
 
-**Facts about the current SecureChat code**
+| Question | Decision |
+|---|---|
+| Placeholder chat stack (`Chat`, `Guest`, `Message`, `ChatRepository`, `WebsocketClient` to the old echo mock) | Replaced. **A chat is a paired contact**, keyed by its account id. The old tables are dropped on first launch; `contacts` is kept |
+| Message storage | **A now, B next.** A = OS protection only (below). B = each message's text encrypted with a per-contact key in the Keychain, so deleting the key shreds the chat (§10 crypto-shredding). SQLCipher rejected: a dependency, and no per-contact deletion |
+| Relay connection | Connected in the foreground, closed in the background (not on "inactive"), reopened after a drop with backoff 1, 2, 5, 10 s (10 s repeating). No separate network-change watcher: the backoff covers a network that comes back. The backoff only resets after a connection has lasted 10 s: the relay opens the socket before refusing a credential, so a refused one would otherwise retry every second, each time asking the Auth Server for a token |
 
-- The chat model is a placeholder from before registration: `Chat`,
-  `Guest`, `Message` tables, `ChatRepository` and `WebsocketClient`
-  connecting to `GlobalState.webSocketURL` = `ws://localhost:8080`, an old
-  Node echo mock. Port 8080 is now the Auth Server. Contacts live apart, in
-  the `contacts` table (`ContactRepository`); contacts are not linked to
-  chats.
-- `LocalIdentityProvider` returns only the PUBLIC key. Sessions need the
-  private key: `IdentityKeyStore.live.loadExisting()` for a registered
-  device, and `DebugLocalIdentity` already stores a private key in
-  UserDefaults but does not hand it out yet.
-- Credentials: registered devices get a token from
-  `SessionClient(baseURL:signer:).openSession(accountUuid:)` (RegistrationKit;
-  the `AttestationCoordinator` is the `AssertionSigning`: a local Secure
-  Enclave signature, no Apple server call). Debug builds that skip
-  registration use `.developmentAccount(<debug account UUID>)`, as the
-  harness does. Token TTL is 15 min, checked at connect only.
-- Relay URL: Debug = `ws://<AuthServerConfig LAN IP>:8081/relay`
-  (Simulator could use localhost); Release has no address yet (same `#error`
-  pattern as `AuthServerEnvironment`).
-- `SessionService` takes a concrete `RelayClient`. SecureChat integration
-  tests (two devices register → pair → open a session, all in process) need
-  a transport seam in SessionKit (a small protocol the service talks to,
-  with an in-process relay for tests).
+### Pieces
 
-**Decisions to put to the user first**
+| Piece | Role |
+|---|---|
+| `RelayConnection` (`SecureChat/Sessions`) | The one relay connection. A new `SessionService` per connection, with a fresh credential each time. Opening a chat opens a session with that contact, again after a reconnect. Keeps each contact's state (starting, open, offline, unanswered, ended) and writes every message to the `MessageStore` |
+| `RelayCredentials` | Registered device: a token from `POST /session`, signed by the App Attest key (local Secure Enclave signature, no Apple call), fetched for every connection. Debug run that skipped registration: `.developmentAccount(debug account)` |
+| `RelayEnvironment` | Debug: `ws://<AuthServerConfig host>:8081/relay`. Release: `#error` until a production relay exists |
+| `SessionIdentity` (`LocalIdentity.swift`) | The identity private key and account id, for sessions only; pairing still gets just the public key |
+| `MessageStore`, `StoredMessage` (`SecureChat/Chat`) | Messages per contact, in memory and in the `messages` table. Status: received, waiting (written before the session opened), sent (handed to the relay), not delivered |
+| `ConversationViewModel`, `ConversationView` | The chat screen and its status line ("Connecting…", "Starting a secure session…", "Secure session", offline, didn't answer, session ended) |
+| `DatabaseLocation` | Option A, below |
+| SessionKit seam | `RelayTransport` protocol (`RelayClient` conforms), `SessionService(transport:…handshakeTimeout:)`, `onRelayStateChange` (called after `relayState` changes; `$relayState` publishes before, too early to open a session) |
+| RegistrationKit seam | `SessionClient(…session:)`, for the fake Auth Server |
 
-1. Replace the placeholder chat stack (tables, `ChatRepository`,
-   `WebsocketClient`) with a contact-based chat, or adapt it.
-2. Message storage: plain SQLite for now (encryption at rest is a known
-   later item, §10) or encrypted from the start.
-3. Relay connection policy: connect on foreground, disconnect on
-   background, reconnect after a drop (suggested).
+### Message storage (option A)
 
-**Then build:** identity with private key → relay connection manager →
-chat screen bound to a contact (session state: open / starting / offline /
-did not answer) → integration tests → phone test with two devices (the
-iPhone X runs `SessionTestApp`, since it cannot run SecureChat).
+- The database is in `Application Support/Database/`, moved from Documents
+  on first launch (pairings are kept).
+- The directory is excluded from backup and has `NSFileProtectionComplete`;
+  the files SQLite creates in it inherit that.
+- Because the file is unreadable while the phone is locked,
+  `DependencyManager` is built when the first window appears, not at launch:
+  iOS may prewarm the process before the phone is unlocked.
+- Not protected by A: messages on an unlocked phone; deleted messages
+  recoverable from free pages and journals. That is B's job.
 
-## Known limits (reviewed 2026-10-14)
+### Phone test (to do)
+
+The iPhone X cannot run SecureChat, so it runs `SessionTestApp`, which
+since 2026-10-15 also pairs face to face ("Pair face to face": PairingKit's
+`FaceToFacePairingView`, the same screen SecureChat shows). Copy and paste stays for
+two Simulators.
+
+- iPhone 16 Plus: SecureChat, the plain "SecureChat" scheme (Debug skips
+  registration: debug identity, development account at the relay).
+- iPhone X: `SessionTestApp`, connected to `ws://192.168.0.84:8081/relay`.
+- Both need the docker relay with `RELAY_DEV_CLAIMED_ACCOUNTS=true`.
+
+## Next
+
+1. Phone test of SecureChat sessions (above).
+2. Message storage B: per-contact encryption of the message text.
+3. Slice 2: Double Ratchet on the same frames.
+
+## Known limits (reviewed 2026-10-14, SecureChat items 2026-10-15)
 
 - **No delivery confirmation.** A message handed to the relay may still be
   lost if the peer disconnects at that moment; the sender is not told.
-  Receipts are a reserved content type.
-- **No automatic reconnect.** `RelayClient` stays disconnected after a drop
-  until `connect()` is called again. SecureChat needs to reconnect on
-  foreground and on network change.
+  Receipts are a reserved content type. In SecureChat such a message stays
+  "sent", although the contact shows as offline.
+- **No automatic reconnect in `RelayClient`.** It stays disconnected after
+  a drop until `connect()` is called again; SecureChat's `RelayConnection`
+  does that.
 - **Whoever holds a `SessionService` must call `disconnect()`** before
   letting go: an open URLSession keeps its delegate alive.
 - **The relay upgrades unauthenticated requests before refusing them.**
   Cheap, but rejecting before the upgrade would be tidier.
 - **A slow receiver slows its senders**: the relay waits for the
   receiver's buffer. Irrelevant at this scale.
+
+- **A device that keeps being refused retries every 10 s while in the
+  foreground** (each time with a new token on a registered device). Nothing
+  tells the user why; the chat says "Connecting…".
+- **No unread marker** in the chat list; the row shows the last message.
+- **No splitting:** a message longer than 8,280 UTF-8 bytes cannot be sent
+  (the send button is disabled and says so).
 
 ## Not in slice 1
 

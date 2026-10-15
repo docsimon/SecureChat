@@ -274,13 +274,14 @@ struct FaceToFacePairingTests {
         var storeCount = 0
         private(set) var pairing: FaceToFacePairing!
 
-        init(_ keyByte: UInt8, name: String) {
+        init(_ keyByte: UInt8, name: String, confirmationTimeout: TimeInterval = 60) {
             key = PairingKitTests.key(keyByte)
             pairing = FaceToFacePairing(
                 identityPublicKey: key, accountUUID: uuid, displayName: name,
                 contacts: { [unowned self] in self.contacts },
                 store: { [unowned self] in self.contacts.append($0); self.storeCount += 1 },
-                now: { Date(timeIntervalSince1970: 1_800_000_000) })
+                now: { Date(timeIntervalSince1970: 1_800_000_000) },
+                confirmationTimeout: confirmationTimeout)
         }
 
         var code: String { pairing.codeToShow! }
@@ -290,23 +291,25 @@ struct FaceToFacePairingTests {
     func bothWays() throws {
         let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob")
 
-        // A reads B first: stored, but B has not acknowledged yet.
+        // A reads B first: held, NOT saved, since B has not confirmed.
         let bob = try #require(a.pairing.scanned(b.code).flatMap { event -> PairedContact? in
             if case .readTheirs(let contact) = event { return contact } else { return nil }
         })
         #expect(bob.identityPublicKey == b.key)
         #expect(a.pairing.progress == .readTheirs(bob))
-        #expect(a.contacts == [bob])
+        #expect(a.contacts.isEmpty)
 
-        // A's code now carries the marker, so B completes on its first read.
+        // A's code now carries the marker, so B completes, and saves, on its
+        // first read.
         let event = b.pairing.scanned(a.code)
         let ada = try #require(b.contacts.first)
         #expect(event == .completed(ada))
         #expect(b.pairing.progress == .bothWays(ada))
 
-        // B's code changed in turn; A completes on reading it.
+        // B's code changed in turn; A completes, and saves, on reading it.
         #expect(a.pairing.scanned(b.code) == .completed(bob))
         #expect(a.pairing.progress == .bothWays(bob))
+        #expect(a.contacts == [bob])
 
         #expect(a.storeCount == 1)
         #expect(b.storeCount == 1)
@@ -318,7 +321,7 @@ struct FaceToFacePairingTests {
         let text = b.code
         #expect(a.pairing.scanned(text) != nil)
         #expect(a.pairing.scanned(text) == nil)
-        #expect(a.storeCount == 1)
+        #expect(a.storeCount == 0)
     }
 
     @Test("A marker for someone else does not complete the pairing")
@@ -338,6 +341,8 @@ struct FaceToFacePairingTests {
         #expect(a.pairing.scanned(a.code) == .refused(.ownCode))
         #expect(a.pairing.progress == .refused(.ownCode))
         #expect(a.pairing.scanned(b.code) != nil)
+        b.pairing.scanned(a.code)
+        #expect(a.pairing.scanned(b.code) != nil)
         #expect(a.contacts.count == 1)
     }
 
@@ -349,7 +354,7 @@ struct FaceToFacePairingTests {
         #expect(a.pairing.scanned("https://example.com") == nil)
         #expect(a.pairing.scanned(c.code) == nil)
         #expect(a.pairing.progress == progress)
-        #expect(a.contacts.count == 1)
+        #expect(a.contacts.isEmpty)
     }
 
     @Test("An already stored contact completes without being stored again")
@@ -357,6 +362,7 @@ struct FaceToFacePairingTests {
         let a = Phone(1, name: "Ada"), b = Phone(2, name: "Bob")
         a.pairing.scanned(b.code)
         b.pairing.scanned(a.code)
+        a.pairing.scanned(b.code)
         a.pairing.restart()
         b.pairing.restart()
         #expect(a.pairing.progress == .looking)
@@ -379,5 +385,63 @@ struct FaceToFacePairingTests {
         b.pairing.scanned(a.code)
         #expect(b.pairing.scanned(c.code) == nil)
         #expect(b.contacts.count == 1)
+    }
+
+    @Test("No confirmation within the timeout: aborted, nothing saved, and a late confirmation changes nothing")
+    func timeout() async throws {
+        let a = Phone(1, name: "Ada", confirmationTimeout: 0.05), b = Phone(2, name: "Bob")
+        a.pairing.scanned(b.code)
+        let ackedByA = a.code
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        guard case .timedOut = a.pairing.progress else {
+            Issue.record("expected timedOut, got \(a.pairing.progress)")
+            return
+        }
+        #expect(a.contacts.isEmpty)
+        #expect(a.code != ackedByA, "our code no longer says we have theirs")
+        b.pairing.scanned(ackedByA)
+        #expect(a.pairing.scanned(b.code) == nil)
+        #expect(a.contacts.isEmpty)
+    }
+
+    @Test("A confirmation in time cancels the timeout")
+    func confirmedInTime() async throws {
+        let a = Phone(1, name: "Ada", confirmationTimeout: 0.05), b = Phone(2, name: "Bob")
+        a.pairing.scanned(b.code)
+        b.pairing.scanned(a.code)
+        a.pairing.scanned(b.code)
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        guard case .bothWays = a.pairing.progress else {
+            Issue.record("expected bothWays, got \(a.pairing.progress)")
+            return
+        }
+        #expect(a.contacts.count == 1)
+    }
+
+    @Test("The phone that completed first, then the other timed out: pairing again repairs it")
+    func repairAfterOneSidedCompletion() async throws {
+        let a = Phone(1, name: "Ada", confirmationTimeout: 0.05), b = Phone(2, name: "Bob")
+        a.pairing.scanned(b.code)
+        b.pairing.scanned(a.code)               // B completes and saves A
+        try await Task.sleep(nanoseconds: 200_000_000)
+        #expect(a.contacts.isEmpty)             // A never saw B's confirmation
+        #expect(b.contacts.count == 1)
+
+        a.pairing.restart()
+        b.pairing.restart()
+        a.pairing.scanned(b.code)
+        b.pairing.scanned(a.code)               // already a contact: completes, not saved again
+        a.pairing.scanned(b.code)
+
+        #expect(a.contacts.count == 1)
+        #expect(b.storeCount == 1)
+        guard case .bothWays = a.pairing.progress, case .bothWays = b.pairing.progress else {
+            Issue.record("expected both ways on both phones")
+            return
+        }
     }
 }

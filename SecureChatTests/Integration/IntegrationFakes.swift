@@ -3,13 +3,15 @@
 //  SecureChatTests
 //
 //  The outside world for the integration tests: Apple's App Attest service,
-//  the Keychain item AppAttestKit keeps, and the Auth Server on the network.
+//  the Keychain item AppAttestKit keeps, the Auth Server on the network, and
+//  the relay.
 //  Everything between them is the code that ships.
 //
 
 import Foundation
 @_spi(Testing) import AppAttestKit
 import RegistrationKit
+import SessionKit
 
 /// Stands in for `DCAppAttestService`: always supported, never fails, and
 /// answers `attestKey` with an object shaped like Apple's development one
@@ -65,13 +67,15 @@ final class InMemoryAttestationKeyStore: AttestationKeyStore, @unchecked Sendabl
     }
 }
 
-/// Stands in for the Auth Server's `/challenge` and `/register`, reached
-/// through the real `RealAttestationTransport` over a `URLSession` whose
-/// requests never leave the process. Keeps the server's rules that the app
-/// depends on: a challenge is issued for one identity key and used once,
-/// `/register` must carry that same key, and only development attestations
-/// are accepted (the docker server runs with `APPATTEST_ENVIRONMENT=development`).
-/// It does not verify Apple's signature: nothing it receives was signed.
+/// Stands in for the Auth Server's `/challenge`, `/register`, `/session/nonce`
+/// and `/session`, reached through the real `RealAttestationTransport` and
+/// `SessionClient` over a `URLSession` whose requests never leave the
+/// process. Keeps the server's rules that the app depends on: a challenge is
+/// issued for one identity key and used once, `/register` must carry that
+/// same key, only development attestations are accepted (the docker server
+/// runs with `APPATTEST_ENVIRONMENT=development`), a session nonce is used
+/// once, and a token is only issued to a registered account.
+/// It does not verify Apple's signatures: nothing it receives was signed.
 final class FakeAuthServer: @unchecked Sendable {
 
     let baseURL: URL
@@ -82,6 +86,9 @@ final class FakeAuthServer: @unchecked Sendable {
     private var openChallenges: [String: String] = [:]
     /// Identity key (base64) → account id.
     private var accounts: [String: String] = [:]
+    private var openNonces: Set<String> = []
+    /// Session token → account id.
+    private var tokens: [String: UUID] = [:]
 
     init() {
         let host = "auth-\(UUID().uuidString.lowercased()).test"
@@ -95,6 +102,15 @@ final class FakeAuthServer: @unchecked Sendable {
     /// The account id this server gave the device with this identity key.
     func accountID(forIdentityKey key: Data) -> String? {
         lock.withLock { accounts[key.base64EncodedString()] }
+    }
+
+    /// What the relay asks the Auth Server's Redis: whose token is this.
+    func account(forToken token: String) -> UUID? {
+        lock.withLock { tokens[token] }
+    }
+
+    var issuedTokenCount: Int {
+        lock.withLock { tokens.count }
     }
 
     fileprivate func respond(to request: URLRequest) -> (status: Int, body: [String: String]) {
@@ -124,9 +140,29 @@ final class FakeAuthServer: @unchecked Sendable {
                 guard AttestationEnvironmentHint.environment(of: attestation) == .development else {
                     return (400, ["error": "attestation_invalid"])
                 }
-                let account = accounts[key] ?? UUID().uuidString
+                let account = accounts[key] ?? UUID().uuidString.lowercased()
                 accounts[key] = account
                 return (200, ["accountUuid": account])
+
+            case ("GET", "/session/nonce"):
+                let nonce = Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
+                openNonces.insert(nonce)
+                return (200, ["challenge": nonce])
+
+            case ("POST", "/session"):
+                guard let body = Self.body(of: request),
+                      let fields = try? JSONDecoder().decode([String: String].self, from: body),
+                      let nonce = fields["nonce"], fields["assertion"] != nil,
+                      let account = fields["accountUuid"].flatMap(UUID.init(uuidString:)) else {
+                    return (400, ["error": "malformed"])
+                }
+                guard openNonces.remove(nonce) != nil else { return (400, ["error": "nonce_invalid_or_expired"]) }
+                guard accounts.values.contains(where: { UUID(uuidString: $0) == account }) else {
+                    return (404, ["error": "account_not_found"])
+                }
+                let token = UUID().uuidString
+                tokens[token] = account
+                return (200, ["sessionToken": token, "accountUuid": account.uuidString.lowercased()])
 
             default:
                 return (404, ["error": "not_found"])
@@ -181,4 +217,118 @@ private final class FakeAuthServerProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+/// Stands in for the relay (RelayServer/): routes fixed-size frames between
+/// the `SessionService`s of the devices under test, in process. Keeps the
+/// relay's rules: credentials checked at connect (a token the fake Auth
+/// Server issued, or a claimed account when `acceptsClaimedAccounts`), and,
+/// like the real one, a refused client sees the socket open and then close;
+/// the sender's id written into every delivered frame, "peer unavailable"
+/// for an account with no connection, nothing stored.
+@MainActor
+final class InProcessRelay {
+
+    private let server: FakeAuthServer
+    private let acceptsClaimedAccounts: Bool
+    /// Routing id → the open connection for it.
+    private var connections: [Data: Connection] = [:]
+
+    init(server: FakeAuthServer, acceptsClaimedAccounts: Bool = false) {
+        self.server = server
+        self.acceptsClaimedAccounts = acceptsClaimedAccounts
+    }
+
+    func transport(for credential: RelayClient.Credential) -> RelayTransport {
+        Connection(relay: self, credential: credential)
+    }
+
+    func isConnected(_ account: UUID) -> Bool {
+        connections[RoutingID.of(accountUUID: account)] != nil
+    }
+
+    /// Connections opened so far, refused ones included.
+    private(set) var connectionAttempts = 0
+
+    /// The network drops this account's connection.
+    func drop(_ account: UUID) {
+        connections[RoutingID.of(accountUUID: account)]?.dropped()
+    }
+
+    fileprivate func account(for credential: RelayClient.Credential) -> UUID? {
+        switch credential {
+        case .sessionToken(let token): return server.account(forToken: token)
+        case .developmentAccount(let account): return acceptsClaimedAccounts ? account : nil
+        }
+    }
+
+    fileprivate func attach(_ connection: Connection, as routingID: Data) {
+        connections[routingID] = connection
+    }
+
+    fileprivate func detach(_ connection: Connection, as routingID: Data) {
+        if connections[routingID] === connection { connections[routingID] = nil }
+    }
+
+    fileprivate func route(_ data: Data, from sender: Data) throws {
+        let frame = try RelayFrame(decoding: data)
+        guard frame.kind == .deliver else { return }
+        if let receiver = connections[frame.peer] {
+            receiver.onFrame?(try RelayFrame(kind: .deliver, peer: sender, body: frame.body).encoded())
+        } else {
+            connections[sender]?.onFrame?(try RelayFrame(kind: .peerUnavailable, peer: frame.peer).encoded())
+        }
+    }
+
+    final class Connection: RelayTransport {
+        private(set) var state: RelayClient.State = .disconnected {
+            didSet { if state != oldValue { onStateChange?(state) } }
+        }
+        var onStateChange: ((RelayClient.State) -> Void)?
+        var onFrame: ((Data) -> Void)?
+
+        private weak var relay: InProcessRelay?
+        private let credential: RelayClient.Credential
+        private var routingID: Data?
+
+        fileprivate init(relay: InProcessRelay, credential: RelayClient.Credential) {
+            self.relay = relay
+            self.credential = credential
+        }
+
+        func connect() {
+            guard state == .disconnected else { return }
+            state = .connecting
+            // Opens a moment later, as a WebSocket does.
+            Task { @MainActor [self] in
+                guard state == .connecting, let relay else { return }
+                relay.connectionAttempts += 1
+                guard let account = relay.account(for: credential) else {
+                    // Upgraded first, then closed "unauthorized".
+                    state = .connected
+                    state = .disconnected
+                    return
+                }
+                let routingID = RoutingID.of(accountUUID: account)
+                self.routingID = routingID
+                relay.attach(self, as: routingID)
+                state = .connected
+            }
+        }
+
+        func disconnect() {
+            if let routingID { relay?.detach(self, as: routingID) }
+            routingID = nil
+            state = .disconnected
+        }
+
+        func send(_ frames: [Data]) async throws {
+            guard state == .connected, let relay, let routingID else { throw RelayClientError.notConnected }
+            for frame in frames { try relay.route(frame, from: routingID) }
+        }
+
+        fileprivate func dropped() {
+            disconnect()
+        }
+    }
 }

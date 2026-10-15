@@ -8,6 +8,19 @@
 
 import Foundation
 
+/// What `SessionService` needs from a relay connection: fixed-size frames
+/// in and out, and the connection state. `RelayClient` is the real one.
+@MainActor
+public protocol RelayTransport: AnyObject {
+    var state: RelayClient.State { get }
+    var onStateChange: ((RelayClient.State) -> Void)? { get set }
+    var onFrame: ((Data) -> Void)? { get set }
+    func connect()
+    func disconnect()
+    /// Sends in order. A failure means the connection is gone.
+    func send(_ frames: [Data]) async throws
+}
+
 @MainActor
 public final class RelayClient: NSObject {
 
@@ -118,6 +131,8 @@ extension RelayClient: URLSessionWebSocketDelegate {
         }
     }
 }
+
+extension RelayClient: RelayTransport {}
 
 public enum RelayClientError: Error, Equatable {
     case notConnected

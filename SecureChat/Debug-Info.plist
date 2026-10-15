@@ -4,7 +4,7 @@
 <dict>
 	<!-- DEBUG BUILDS ONLY (INFOPLIST_FILE is set for the Debug configuration
 	     alone). Lets a development build reach the Auth Server running on
-	     the Mac over plain HTTP on the LAN. Scoped to local networking, not
+	     the Mac over plain HTTP on the LAN, and the relay over plain ws. Scoped to local networking, not
 	     a general ATS bypass, and absent from Release builds altogether.
 	     See AuthServerEnvironment.swift. -->
 	<key>NSAppTransportSecurity</key>
@@ -13,6 +13,6 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Used only in development builds to reach the auth server running on your Mac.</string>
+	<string>Used only in development builds to reach the auth server and relay running on your Mac.</string>
 </dict>
 </plist>

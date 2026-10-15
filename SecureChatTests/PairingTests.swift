@@ -43,15 +43,12 @@ final class PairingTests: XCTestCase {
                                    LocalIdentity(identityPublicKey: Data(repeating: 1, count: 32), accountUUID: UUID())
                                },
                                db: DatabaseStrategy? = nil) throws
-        -> (PairingViewModel, ContactRepository, () -> [FaceToFacePairing.Event]) {
+        -> (PairingViewModel, ContactRepository) {
         let profile = ProfileStore(defaults: defaults)
         profile.displayName = name
         let repository = ContactRepository(db: try db ?? SQLiteDB(path: ":memory:"))
-        final class Recorder { var events: [FaceToFacePairing.Event] = [] }
-        let recorder = Recorder()
-        let viewModel = PairingViewModel(identity: identity, contacts: repository, profile: profile,
-                                         signal: { recorder.events.append($0) })
-        return (viewModel, repository, { recorder.events })
+        let viewModel = PairingViewModel(identity: identity, contacts: repository, profile: profile)
+        return (viewModel, repository)
     }
 
     // MARK: Storage
@@ -87,10 +84,18 @@ final class PairingTests: XCTestCase {
         XCTAssertEqual(first.identityPublicKey.count, 32)
     }
 
+    func test_debugIdentity_givesSessionsThePrivateKeyOfThePairedPublicKey() {
+        let paired = DebugLocalIdentity.loadOrCreate(defaults: defaults)
+        let session = DebugLocalIdentity.loadOrCreateForSessions(defaults: defaults)
+
+        XCTAssertEqual(session.privateKey.publicKey.rawRepresentation, paired.identityPublicKey)
+        XCTAssertEqual(session.accountUUID, paired.accountUUID)
+    }
+
     // MARK: View model
 
     func test_withoutAName_asksForOne_thenPairs() throws {
-        let (viewModel, _, _) = try makeViewModel(name: nil)
+        let (viewModel, _) = try makeViewModel(name: nil)
         guard case .needsName = viewModel.phase else { return XCTFail("expected needsName") }
         XCTAssertFalse(viewModel.canConfirmName)
 
@@ -104,47 +109,53 @@ final class PairingTests: XCTestCase {
     }
 
     func test_unregisteredDevice_cannotPair() throws {
-        let (viewModel, _, _) = try makeViewModel(identity: { throw LocalIdentityError.notRegistered })
+        let (viewModel, _) = try makeViewModel(identity: { throw LocalIdentityError.notRegistered })
         guard case .unavailable = viewModel.phase else { return XCTFail("expected unavailable") }
     }
 
-    func test_scanningTheirCode_storesTheContact_andCompletesWhenTheyHaveOurs() throws {
+    func test_theContactIsSaved_onlyWhenTheyHaveOursToo() throws {
         let ownKey = Data(repeating: 1, count: 32)
-        let (viewModel, repository, events) = try makeViewModel(
+        let (viewModel, repository) = try makeViewModel(
             identity: { LocalIdentity(identityPublicKey: ownKey, accountUUID: UUID()) })
         let bobUUID = UUID()
 
-        viewModel.scanned(try code(2, uuid: bobUUID))
-        XCTAssertEqual(repository.contacts.map(\.displayName), ["Bob"])
+        let first = viewModel.scanned(try code(2, uuid: bobUUID))
+        XCTAssertTrue(repository.contacts.isEmpty, "not saved before they confirm")
         guard case .pairing(let pairing) = viewModel.phase else { return XCTFail("expected pairing") }
         // Our code now tells Bob's phone that we have his.
         XCTAssertTrue(try PairingPayload(scanned: XCTUnwrap(pairing.codeToShow))
             .acknowledges(Data(repeating: 2, count: 32)))
 
-        viewModel.scanned(try code(2, acknowledging: ownKey, uuid: bobUUID))
+        let second = viewModel.scanned(try code(2, acknowledging: ownKey, uuid: bobUUID))
         let bob = try XCTUnwrap(repository.contacts.first)
         XCTAssertEqual(repository.contacts.count, 1)
         XCTAssertEqual(pairing.progress, .bothWays(bob))
-        XCTAssertEqual(events(), [.readTheirs(bob), .completed(bob)])
+        XCTAssertEqual(second, .completed(bob))
+        // Saved as at completion: "paired at" is when the pairing finished,
+        // a moment after the first read.
+        guard case .readTheirs(let read) = first else { return XCTFail("expected readTheirs, got \(String(describing: first))") }
+        XCTAssertEqual(read.identityPublicKey, bob.identityPublicKey)
+        XCTAssertGreaterThanOrEqual(bob.pairedAt, read.pairedAt)
     }
 
     func test_aRefusedCode_isSignalled_andStoresNothing() throws {
-        let (viewModel, repository, events) = try makeViewModel()
+        let (viewModel, repository) = try makeViewModel()
 
-        viewModel.scanned("https://example.com")
+        let event = viewModel.scanned("https://example.com")
 
-        XCTAssertEqual(events(), [.refused(.notAPairingCode)])
+        XCTAssertEqual(event, .refused(.notAPairingCode))
         XCTAssertTrue(repository.contacts.isEmpty)
     }
 
     func test_whenTheContactCannotBeSaved_pairingStops_withoutASuccessSignal() throws {
-        let (viewModel, repository, events) = try makeViewModel(db: FailingContactsDB())
+        let (viewModel, repository) = try makeViewModel(db: FailingContactsDB())
 
-        viewModel.scanned(try code(2))
+        // Their code already says they have ours: completing saves at once.
+        let event = viewModel.scanned(try code(2, acknowledging: Data(repeating: 1, count: 32)))
 
         guard case .unavailable = viewModel.phase else { return XCTFail("expected unavailable") }
         XCTAssertTrue(repository.contacts.isEmpty)
-        XCTAssertEqual(events(), [])
+        XCTAssertNil(event, "nothing to signal when the contact was not saved")
     }
 }
 
@@ -155,15 +166,7 @@ private struct FailingContactsDB: DatabaseStrategy {
     func fetchContacts() throws -> [PairedContact] { [] }
     func addContact(_ contact: PairedContact) throws { throw Failure() }
 
-    func saveChat(chat: Chat) {}
-    func addGuest(guest: Guest) {}
-    func update(guest: Guest) {}
-    func saveMessage(message: Message) {}
-    func getMessage(id: MessageID) -> Message? { nil }
-    func getGuest(id: GuestID) throws -> Guest { throw Failure() }
-    func getChat(id: ChatID) -> Chat? { nil }
-    var chatList: [ChatListModel] { [] }
-    func bootstrap() throws {}
-    func createChat(title: String) {}
-    func getOwner() throws -> Guest { throw Failure() }
+    func fetchMessages() throws -> [StoredMessage] { [] }
+    func addMessage(_ message: StoredMessage) throws {}
+    func updateStatus(of ids: [UUID], to status: StoredMessage.Status) throws {}
 }

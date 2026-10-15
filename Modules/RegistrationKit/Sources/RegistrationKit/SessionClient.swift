@@ -41,12 +41,15 @@ public struct SessionClient {
     /// Note the type — `AssertionSigning`, not `AttestationCoordinator`. The
     /// session layer only needs to sign; it has no business driving registration.
     let signer: AssertionSigning
+    let session: URLSession
     let onEvent: @Sendable (TransportEvent) -> Void
 
-    public init(baseURL: URL, signer: AssertionSigning,
+    /// `session` is for tests, as in `RealAttestationTransport`.
+    public init(baseURL: URL, signer: AssertionSigning, session: URLSession = .shared,
                 onEvent: @escaping @Sendable (TransportEvent) -> Void = { _ in }) {
         self.baseURL = baseURL
         self.signer = signer
+        self.session = session
         self.onEvent = onEvent
     }
 
@@ -85,7 +88,7 @@ public struct SessionClient {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(requestBody)
 
-        let data = try await performAuthServerRequest(urlRequest, endpoint: "POST /session", onEvent: onEvent)
+        let data = try await performAuthServerRequest(urlRequest, endpoint: "POST /session", session: session, onEvent: onEvent)
 
         // STEP 6 happens SERVER-SIDE:
         //   1. Nonce valid and unconsumed
@@ -105,7 +108,7 @@ public struct SessionClient {
 
     private func fetchNonce() async throws -> Data {
         let url = baseURL.appendingPathComponent("session/nonce")
-        let data = try await performAuthServerRequest(URLRequest(url: url), endpoint: "GET /session/nonce", onEvent: onEvent)
+        let data = try await performAuthServerRequest(URLRequest(url: url), endpoint: "GET /session/nonce", session: session, onEvent: onEvent)
         // Same response shape as /challenge — both are "here are 32 random
         // bytes", just with different TTLs server-side.
         let decoded = try JSONDecoder().decode(NonceResponseBody.self, from: data)

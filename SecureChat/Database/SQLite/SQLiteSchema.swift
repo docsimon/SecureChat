@@ -10,60 +10,16 @@ import Foundation
 import SQLite
 
 protocol SQLiteSchemaProtocol {
-    func createGuestTable(db: Connection) throws
-    func createChatTable(db: Connection) throws
-    func createChatGuestJointTable(db: Connection) throws
-    func createMessageTable(db: Connection) throws
+    func dropPlaceholderTables(db: Connection) throws
     func createContactsTable(db: Connection) throws
+    func createMessagesTable(db: Connection) throws
 }
 
 
 // Tables Schema
 
-enum GuestsTable {
-    
-    static let name = "guests"
-    static let guests = Table(name)
-    static let id = SQLite.Expression<UUID>("id")
-    static let date = SQLite.Expression<Date>("date")
-    static let username = SQLite.Expression<String>("username")
-    static let isOwner = SQLite.Expression<Bool>("isOwner")
-}
-
-enum ChatsTable {
-    
-    static let name = "chats"
-    static let chats = Table(name)
-    static let id = SQLite.Expression<UUID>("id")
-    static let title = SQLite.Expression<String>("title")
-    static let date = SQLite.Expression<Date>("date")
-}
-
-enum ChatsGuestsTable {
-    
-    static let name = "chats_guests"
-    static let chatsGuests = Table(name)
-    static let chats = ChatsTable.chats
-    static let guests = GuestsTable.guests
-    static let chatID = Expression<ChatID>("chatID")
-    static let guestID = Expression<GuestID>("guestID")
-}
-
-enum MessagesTable {
-    static let name = "messages"
-    static let messages = Table(name)
-    static let id = SQLite.Expression<MessageID>("id")
-    static let chatID = SQLite.Expression<ChatID>("chatID")
-    static let guestID = SQLite.Expression<GuestID>("guestID") // sender
-    static let content = SQLite.Expression<String>("content")
-    static let date = SQLite.Expression<Date>("date")
-    static let ttl = SQLite.Expression<Int>("ttl")
-    static let isOwner = SQLite.Expression<Bool>("isOwner")
-}
-
-/// People paired with by QR scan (Architecture/pairing-workflow.md). Separate
-/// from `guests`: a contact is an identity key and a routing address, known
-/// before any chat with that person exists.
+/// People paired with by QR scan (Architecture/pairing-workflow.md): an
+/// identity key and a routing address. A chat is a contact.
 enum ContactsTable {
     static let name = "contacts"
     static let contacts = Table(name)
@@ -73,103 +29,31 @@ enum ContactsTable {
     static let pairedAt = SQLite.Expression<Date>("pairedAt")
 }
 
-struct SQLiteSchema: SQLiteSchemaProtocol {
-    
-    
-    //MARK: Guests Table
-    
-    func createGuestTable(db: Connection) throws {
-        
-        // Check if table guests exists, otherwise return
-        guard !(try db.tableExists(GuestsTable.name)) else {
-            SCLogger.logger.info(message: "Guests table already exists!", category: .Database)
-            return
-        }
-        
-        try db.run(GuestsTable.guests.create { t in
-            t.column(GuestsTable.id, primaryKey: true)
-            t.column(GuestsTable.date)
-            t.column(GuestsTable.username)
-            t.column(GuestsTable.isOwner)
-        })
-        
-        SCLogger.logger.info(message: "Guests table created!", category: .Database)
-        
-        // Add owner
-        do {
-            try addOwner(db: db)
-        } catch {
-            SCLogger.logger.error(message: "Failer to create owner", category: .Database)
-        }
-    }
-    
-    //MARK: Chats Table
-    
-    func createChatTable(db: Connection) throws {
-        
-        // Check if table guests exists, otherwise return
-        guard !(try db.tableExists(ChatsTable.name)) else {
-            SCLogger.logger.info(message: "Chats table already exists!", category: .Database)
-            return
-        }
-        
-       
-        
-        try db.run(ChatsTable.chats.create { t in
-            t.column(ChatsTable.id, primaryKey: true)
-            t.column(ChatsTable.title)
-            t.column(ChatsTable.date)
-        })
-        
-        SCLogger.logger.info(message: "Chats table created!", category: .Database)
-    }
-    
-    //MARK: ChatsGuests Table
-    
-    func createChatGuestJointTable(db: Connection) throws {
-        
-        // Check if table guests exists, otherwise return
-        guard !(try db.tableExists(ChatsGuestsTable.name)) else {
-            SCLogger.logger.info(message: "Chat_guests table already exists!", category: .Database)
-            return
-        }
-        
-        try db.run(ChatsGuestsTable.chatsGuests.create { t in
-            t.column(ChatsGuestsTable.chatID)
-            t.column(ChatsGuestsTable.guestID)
-            t.foreignKey(ChatsGuestsTable.chatID, references: ChatsGuestsTable.chats, ChatsGuestsTable.chatID)
-            t.foreignKey(ChatsGuestsTable.guestID, references: ChatsGuestsTable.guests, ChatsGuestsTable.guestID)
-            t.primaryKey(ChatsGuestsTable.chatID, ChatsGuestsTable.guestID) // Composite primary key
-        })
-        
-        SCLogger.logger.info(message: "Chat_guests table created!", category: .Database)
-    }
-    
-    //MARK: Messages Table
-    
-    func createMessageTable(db: Connection) throws {
+/// Messages exchanged with contacts, keyed by the contact's account id.
+/// Plain text for now: encrypting it is the next storage step
+/// (session-workflow.md, "Message storage").
+enum MessagesTable {
+    static let name = "messages"
+    static let messages = Table(name)
+    static let id = SQLite.Expression<UUID>("id")
+    static let peer = SQLite.Expression<UUID>("peer")
+    static let text = SQLite.Expression<String>("text")
+    static let date = SQLite.Expression<Date>("date")
+    static let status = SQLite.Expression<Int>("status")
+}
 
-        // Check if table guests exists, otherwise return
-        guard !(try db.tableExists(MessagesTable.name)) else {
-            SCLogger.logger.info(message: "Messages table already exists!", category: .Database)
-            return
+struct SQLiteSchema: SQLiteSchemaProtocol {
+
+    //MARK: Placeholder tables
+
+    func dropPlaceholderTables(db: Connection) throws {
+        guard try db.tableExists(SQLiteConstants.placeholderMarkerTable) else { return }
+        for table in SQLiteConstants.placeholderTables {
+            try db.run(Table(table).drop(ifExists: true))
         }
-        
-        
-        try db.run(MessagesTable.messages.create { t in
-            t.column(MessagesTable.id, primaryKey: true)
-            t.column(MessagesTable.chatID)
-            t.column(MessagesTable.guestID)
-            t.column(MessagesTable.content)
-            t.column(MessagesTable.date)
-            t.column(MessagesTable.ttl)
-            t.column(MessagesTable.isOwner)
-        })
-        
-        SCLogger.logger.info(message: "Messages table created!", category: .Database)
+        SCLogger.logger.info(message: "Placeholder chat tables dropped", category: .Database)
     }
-        
-    
+
     //MARK: Contacts Table
 
     func createContactsTable(db: Connection) throws {
@@ -190,28 +74,25 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         SCLogger.logger.info(message: "Contacts table created!", category: .Database)
     }
 
-    private func addOwner(db: Connection) throws {
-    
-        guard try db.tableExists(GuestsTable.name) else {
+    //MARK: Messages Table
+
+    func createMessagesTable(db: Connection) throws {
+
+        guard !(try db.tableExists(MessagesTable.name)) else {
+            SCLogger.logger.info(message: "Messages table already exists!", category: .Database)
             return
         }
-        
-        do {
-           
-            let guestID = UUID()
-            let ownerInsert = GuestsTable.guests.insert(
-                GuestsTable.id <- guestID,
-                GuestsTable.date <- Date(),
-                GuestsTable.username <- "Owner",
-                GuestsTable.isOwner <- true
-            )
-            
-            try db.run(ownerInsert)
-            SCLogger.logger.info(message: "Guest Owner record created! \(guestID)", category: .Database)
-            
-        } catch {
-            SCLogger.logger.error(message: "Error creating Guest Owner record:", error: error, category: .Database)
-        }
+
+        try db.run(MessagesTable.messages.create { t in
+            t.column(MessagesTable.id, primaryKey: true)
+            t.column(MessagesTable.peer)
+            t.column(MessagesTable.text)
+            t.column(MessagesTable.date)
+            t.column(MessagesTable.status)
+        })
+        try db.run(MessagesTable.messages.createIndex(MessagesTable.peer, MessagesTable.date))
+
+        SCLogger.logger.info(message: "Messages table created!", category: .Database)
     }
 }
 

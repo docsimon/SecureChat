@@ -21,17 +21,6 @@ import PairingKit
 @MainActor
 final class RegistrationPairingIntegrationTests: XCTestCase {
 
-    /// One phone: its own stores, wired together the way DependencyManager
-    /// wires the real ones.
-    private struct Device {
-        let registration: RegistrationViewModel
-        let identityProvider: LocalIdentityProvider
-        let contacts: ContactRepository
-        let profile: ProfileStore
-    }
-
-    private struct NotPairing: Error { let phase: String }
-
     private var server: FakeAuthServer!
     private var suiteNames: [String] = []
 
@@ -43,62 +32,28 @@ final class RegistrationPairingIntegrationTests: XCTestCase {
         for name in suiteNames { UserDefaults().removePersistentDomain(forName: name) }
     }
 
-    private func makeDevice(name: String) throws -> Device {
+    private func makeDevice(name: String) throws -> IntegrationDevice {
         let suiteName = "RegistrationPairingIntegrationTests-\(UUID().uuidString)"
         suiteNames.append(suiteName)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        let identity = IdentityKeyStore.inMemory()
-        let account = RegisteredAccountStore(defaults: defaults)
-
-        let transport = EnvironmentLoggingTransport(base: RealAttestationTransport(
-            baseURL: server.baseURL, identity: identity, account: account, session: server.session))
-        let coordinator = AttestationCoordinator(testingService: FakeAppleAttestService(),
-                                                 store: InMemoryAttestationKeyStore(),
-                                                 transport: transport)
-        let registration = RegistrationViewModel(
-            coordinator: coordinator,
-            firstLaunchGate: FirstLaunchPurgeGate(hasRunBefore: { false }, markAsRun: {}),
-            identity: identity, account: account)
-
-        let profile = ProfileStore(defaults: defaults)
-        profile.displayName = name
-        return Device(registration: registration,
-                      identityProvider: LocalIdentityProvider(identityStore: identity, accountStore: account),
-                      contacts: ContactRepository(db: try SQLiteDB(path: ":memory:")),
-                      profile: profile)
-    }
-
-    private func register(_ device: Device) async {
-        await device.registration.load()
-        XCTAssertEqual(device.registration.phase, .notRegistered)
-        await device.registration.register()
-        XCTAssertEqual(device.registration.phase, .registered)
-    }
-
-    private func pairing(on device: Device) -> PairingViewModel {
-        PairingViewModel(identity: device.identityProvider.load, contacts: device.contacts,
-                         profile: device.profile, signal: { _ in })
+        return try IntegrationDevice(name: name, server: server, defaults: XCTUnwrap(UserDefaults(suiteName: suiteName)))
     }
 
     private func code(on viewModel: PairingViewModel) throws -> String {
-        guard case .pairing(let pairing) = viewModel.phase else {
-            throw NotPairing(phase: "\(viewModel.phase)")
-        }
-        return try XCTUnwrap(pairing.codeToShow)
+        try IntegrationDevice.code(on: viewModel)
     }
 
     // MARK: Tests
 
     func test_registration_givesPairingTheServersAccountAndTheRegisteredKey() async throws {
         let ada = try makeDevice(name: "Ada")
-        await register(ada)
+        await ada.register()
 
         let me = try ada.identityProvider.load()
 
-        XCTAssertEqual(me.accountUUID.uuidString,
-                       server.accountID(forIdentityKey: me.identityPublicKey),
+        XCTAssertEqual(me.accountUUID,
+                       server.accountID(forIdentityKey: me.identityPublicKey).flatMap(UUID.init(uuidString:)),
                        "pairing must hand out the account id the server issued for this key")
-        let shown = try PairingPayload(scanned: code(on: pairing(on: ada)))
+        let shown = try PairingPayload(scanned: code(on: ada.pairing()))
         XCTAssertEqual(shown.identityPublicKey, me.identityPublicKey)
         XCTAssertEqual(shown.accountUUID, me.accountUUID)
     }
@@ -107,21 +62,16 @@ final class RegistrationPairingIntegrationTests: XCTestCase {
         let ada = try makeDevice(name: "Ada")
         await ada.registration.load()
 
-        guard case .unavailable = pairing(on: ada).phase else {
+        guard case .unavailable = ada.pairing().phase else {
             return XCTFail("an unregistered device must not show a pairing code")
         }
     }
 
     func test_twoRegisteredDevices_pairBothWays_withTheirRegisteredIdentities() async throws {
         let ada = try makeDevice(name: "Ada"), bob = try makeDevice(name: "Bob")
-        await register(ada)
-        await register(bob)
-        let adaPairing = pairing(on: ada), bobPairing = pairing(on: bob)
-
-        // Face to face: each camera reads whatever the other screen shows now.
-        bobPairing.scanned(try code(on: adaPairing))
-        adaPairing.scanned(try code(on: bobPairing))   // Bob's code now says he has Ada's
-        bobPairing.scanned(try code(on: adaPairing))   // Ada's code now says she has Bob's
+        await ada.register()
+        await bob.register()
+        let (adaPairing, bobPairing) = try IntegrationDevice.pairFaceToFace(ada, bob)
 
         let adaIdentity = try ada.identityProvider.load(), bobIdentity = try bob.identityProvider.load()
         XCTAssertNotEqual(adaIdentity, bobIdentity)

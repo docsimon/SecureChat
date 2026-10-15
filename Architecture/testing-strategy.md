@@ -12,9 +12,10 @@ then together with the others inside SecureChat.
 | SecureChat unit tests (`SecureChatTests`) | one app type at a time | its dependencies | every change |
 | SecureChat integration tests (`SecureChatTests/Integration`) | every module and app type between the user and the outside world | Apple, the network, the Keychain | every change |
 | Relay tests (`./gradlew test` in `RelayServer/`) | the relay in process, real WebSocket clients | the Auth Server's token store | every relay change |
-| Live relay tests (`SessionKit`, opt-in via `TEST_RUNNER_SESSIONKIT_LIVE_RELAY`) | `SessionService`, `RelayClient` and the docker relay | identities (development accounts) | when the client or relay changes |
+| Live relay tests (`SessionKit`, opt-in via `TEST_RUNNER_SESSIONKIT_LIVE_RELAY`) | `SessionService`, `RelayClient` and the docker relay, including both "contact left" rules (told after a two-way exchange, not after a one-way one) | identities (development accounts) | when the client or relay changes, and before a release against the relay being released |
 | Feature harnesses (`AppAttestTestApp`, `PairingTestApp`, `SessionTestApp`) | the feature on a phone; App Attest (development) only in `AppAttestTestApp` | whatever the harness chooses | when a feature's Apple or hardware behaviour changes |
 | "SecureChat Real Registration" scheme | the whole app on a phone: development App Attest, the local Auth Server, real cameras | nothing | only when the user decides to |
+| Acceptance checklist (`acceptance-checklist.md`) | the whole app on two phones: pairing, chat, presence, "contact left" | nothing | before a release, and after changes to pairing, sessions or the relay |
 
 ## Rules
 

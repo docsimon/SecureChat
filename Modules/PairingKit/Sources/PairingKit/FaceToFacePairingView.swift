@@ -2,28 +2,25 @@
 //  FaceToFacePairingView.swift
 //  PairingKit
 //
-//  THE pairing screens (Architecture/pairing-workflow.md, "Two screens"),
+//  THE pairing screen (Architecture/pairing-workflow.md, "One screen"),
 //  shown by SecureChat and by the PairingTestApp and SessionTestApp
 //  harnesses alike, so every change to how pairing looks and feels is
 //  tried on the bench and the phones exactly as it will ship.
 //
-//  1. Start: what to do, how the last attempt ended, and "Pair". Any text
-//     size: it scrolls.
-//  2. Code: only the QR code, as large as the screen allows, while the
-//     camera reads the other phone. Nobody sees their own screen in this
-//     position, so progress is felt: a tap when their code is read, the
-//     full vibration when both phones have each other's key, an error
-//     buzz when it fails.
+//  MVP (2026-10-15): one line of instructions, the QR code as large as the
+//  screen allows, one status line. The front camera reads unseen. Nothing
+//  times out and nothing moves on by itself: the screen stays until the
+//  person closes it, so if only one phone has read the other, holding them
+//  together a little longer completes the other.
 //
-//  On completion the code stays up for `holdAfterCompletion`, and the
-//  vibration waits `completionSignalDelay`: the phone that completes first
-//  keeps showing the code the other one needs, and nobody pulls away
-//  before it has been read.
+//  Nobody sees their own screen in this position, so progress is felt: a
+//  tap when their code is read, the full vibration and a sound when both
+//  phones have each other's key, an error buzz for a refused code.
 //
 //  The rules of the attempt are `FaceToFacePairing`'s. Hosts add what is
 //  their own: which scans count (`scan`), what a scanner failure is logged
-//  as, and Debug-only content for the debug sheet. Presenting and
-//  dismissing the whole thing is the host's.
+//  as, and Debug-only lines for the debug sheet. Presenting and dismissing
+//  is the host's.
 //
 
 import SwiftUI
@@ -32,27 +29,25 @@ import UIKit
 
 public struct FaceToFacePairingView<Debug: View>: View {
 
+    /// What reads the codes. Previews have no camera, and asking for one
+    /// there would only fail.
+    enum CameraFeed {
+        case live
+        case none
+    }
+
     @ObservedObject private var pairing: FaceToFacePairing
     private let errorCorrection: PairingQRCode.ErrorCorrection
     private let scan: @MainActor (String) -> FaceToFacePairing.Event?
     private let signal: @MainActor (PairingFeedback) -> Void
-    private let onCameraChange: @MainActor (QRCodeScannerView.Camera) -> Void
     private let onScannerFailure: @MainActor (QRCodeScannerView.Failure) -> Void
-    private let timing: PairingTiming
-    private let cameraFeed: PairingCodeScreen.CameraFeed
+    private let cameraFeed: CameraFeed
     private let debug: Debug
 
-    enum Screen: Equatable {
-        case start
-        case code
-    }
-
-    @State private var screen: Screen
-    @State private var outcome: PairingOutcome?
-    @State private var camera: QRCodeScannerView.Camera = .front
+    /// Why the camera is not reading, when it is not. The code stays up:
+    /// the other phone can read this one regardless.
     @State private var scannerProblem: QRCodeScannerView.Failure?
-    /// The last code refused during this attempt, for the start screen.
-    @State private var lastRefusal: PairingError?
+    @State private var previousBrightness: CGFloat?
     @State private var showingDebug = false
 
     /// - Parameters:
@@ -61,74 +56,77 @@ public struct FaceToFacePairingView<Debug: View>: View {
     ///     the result must not be signalled (the contact could not be saved).
     ///   - signal: how progress is felt and heard. `PairingSignal.live` on
     ///     phones; previews and tests pass their own.
-    ///   - onCameraChange: after the attempt restarted on the other camera.
-    ///   - onScannerFailure: for the host's log. The screens show the
-    ///     problem themselves.
+    ///   - onScannerFailure: for the host's log. The screen shows the
+    ///     problem itself.
     ///   - debug: shown in the debug sheet, Debug builds only.
     public init(pairing: FaceToFacePairing,
                 errorCorrection: PairingQRCode.ErrorCorrection = .medium,
                 scan: (@MainActor (String) -> FaceToFacePairing.Event?)? = nil,
                 signal: @escaping @MainActor (PairingFeedback) -> Void = PairingSignal.live,
-                onCameraChange: @escaping @MainActor (QRCodeScannerView.Camera) -> Void = { _ in },
                 onScannerFailure: @escaping @MainActor (QRCodeScannerView.Failure) -> Void = { _ in },
-                timing: PairingTiming = .standard,
                 @ViewBuilder debug: () -> Debug) {
         self.init(pairing: pairing, errorCorrection: errorCorrection, scan: scan, signal: signal,
-                  onCameraChange: onCameraChange, onScannerFailure: onScannerFailure, timing: timing,
-                  screen: .start, outcome: nil, cameraFeed: .live, scannerProblem: nil, debug: debug)
+                  onScannerFailure: onScannerFailure, cameraFeed: .live, scannerProblem: nil, debug: debug)
     }
 
-    /// Everything public plus where previews start: a screen, an outcome,
-    /// a still camera window and a camera problem.
+    /// Everything public plus what previews set: no camera, and a camera
+    /// problem to start with.
     init(pairing: FaceToFacePairing,
          errorCorrection: PairingQRCode.ErrorCorrection = .medium,
          scan: (@MainActor (String) -> FaceToFacePairing.Event?)? = nil,
          signal: @escaping @MainActor (PairingFeedback) -> Void = PairingSignal.live,
-         onCameraChange: @escaping @MainActor (QRCodeScannerView.Camera) -> Void = { _ in },
          onScannerFailure: @escaping @MainActor (QRCodeScannerView.Failure) -> Void = { _ in },
-         timing: PairingTiming = .standard,
-         screen: Screen,
-         outcome: PairingOutcome?,
-         cameraFeed: PairingCodeScreen.CameraFeed,
+         cameraFeed: CameraFeed,
          scannerProblem: QRCodeScannerView.Failure?,
          @ViewBuilder debug: () -> Debug) {
         self.pairing = pairing
         self.errorCorrection = errorCorrection
         self.scan = scan ?? { [pairing] in pairing.scanned($0) }
         self.signal = signal
-        self.onCameraChange = onCameraChange
         self.onScannerFailure = onScannerFailure
-        self.timing = timing
         self.cameraFeed = cameraFeed
         self.debug = debug()
-        _screen = State(initialValue: screen)
-        _outcome = State(initialValue: outcome)
         _scannerProblem = State(initialValue: scannerProblem)
     }
 
     public var body: some View {
-        Group {
-            switch screen {
-            case .start:
-                PairingStartScreen(outcome: outcome, cameraDenied: scannerProblem == .accessDenied,
-                                   canPair: pairing.codeToShow != nil, pair: start, showDebug: showDebug)
-            case .code:
-                PairingCodeScreen(code: pairing.codeToShow, errorCorrection: errorCorrection,
-                                  camera: $camera, scannerProblem: scannerProblem, cameraFeed: cameraFeed,
-                                  onCode: handle, onScannerFailure: scannerFailed,
-                                  done: leaveCodeScreen, showDebug: showDebug)
-                    .toolbar(.hidden, for: .navigationBar)
+        VStack(spacing: 16) {
+            Text("Hold the phones screen to screen until you feel a long vibration.")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .minimumScaleFactor(0.5)
+
+            // The QR code takes the space first: at large text sizes the
+            // words shrink, not the code the other camera has to read.
+            if let code = pairing.codeToShow,
+               let image = PairingQRCode.image(for: code, errorCorrection: errorCorrection) {
+                Image(decorative: image, scale: 1)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .accessibilityLabel("Your pairing code")
+                    .layoutPriority(1)
             }
+
+            status
+
+            scanner
+
+#if DEBUG
+            Button("Debug") { showingDebug = true }
+                .font(.footnote)
+#endif
         }
-        // Follows the attempt while the code is up: the completion signal
-        // and hold, the timeout, and giving up when nothing is read.
-        .task(id: FollowKey(screen: screen, progress: pairing.progress)) { await follow() }
-        .onChange(of: camera) { camera in
-            scannerProblem = nil
-            lastRefusal = nil
-            pairing.restart()
-            onCameraChange(camera)
-        }
+        .padding()
+        .frame(maxHeight: .infinity)
+        // White whatever the appearance: the screen is a light source for
+        // the other camera.
+        .foregroundStyle(.black)
+        .background(Color.white.ignoresSafeArea())
+        .environment(\.colorScheme, .light)
+        .onAppear(perform: begin)
+        .onDisappear(perform: end)
 #if DEBUG
         .sheet(isPresented: $showingDebug) {
             PairingDebugSheet(pairing: pairing, use: handle) { debug }
@@ -136,92 +134,80 @@ public struct FaceToFacePairingView<Debug: View>: View {
 #endif
     }
 
-    private var showDebug: (() -> Void)? {
-#if DEBUG
-        return { showingDebug = true }
-#else
-        return nil
-#endif
+    private var status: some View {
+        Group {
+            switch (scannerProblem, pairing.progress) {
+            case (_, .bothWays(let contact)):
+                Label("Paired with \(contact.displayName)", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case (_, .readTheirs(let contact)):
+                Label("Got \(contact.displayName). Keep holding…", systemImage: "arrow.left.arrow.right")
+                    .foregroundStyle(.orange)
+            case (_, .refused(let error)):
+                Label(PairingSignal.message(for: error), systemImage: "xmark.octagon.fill")
+                    .foregroundStyle(.red)
+            case (.accessDenied?, .looking):
+                VStack(spacing: 4) {
+                    Text("SecureChat needs the camera to read the other phone's code.")
+                    Button("Allow camera") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                }
+            case (.cameraUnavailable?, .looking):
+                Label("No camera here. The other phone can still read this code.", systemImage: "camera.slash")
+                    .foregroundStyle(.secondary)
+            case (nil, .looking):
+                Text("Looking for the other phone…").foregroundStyle(.secondary)
+            }
+        }
+        .font(.headline)
+        .multilineTextAlignment(.center)
+        .lineLimit(3)
+        .minimumScaleFactor(0.5)
     }
 
-    // MARK: Attempt
-
-    private func start() {
-        outcome = nil
-        lastRefusal = nil
-        pairing.restart()
-        screen = .code
+    /// Reads unseen: with the phones face to face nobody can look at a
+    /// preview anyway (iOS still shows its camera dot).
+    @ViewBuilder
+    private var scanner: some View {
+        if cameraFeed == .live, scannerProblem == nil {
+            QRCodeScannerView(camera: .front, onCode: handle, onFailure: { failure in
+                scannerProblem = failure
+                onScannerFailure(failure)
+            })
+            .frame(width: 1, height: 1)
+            .opacity(0)
+            .accessibilityHidden(true)
+        }
     }
 
     private func handle(_ code: String) {
-        // A code pasted in the debug sheet from the start screen starts
-        // an attempt, as tapping Pair would.
-        if screen == .start { start() }
         guard let event = scan(code) else { return }
         switch event {
-        case .readTheirs:
-            signal(.readTheirs)
-        case .refused(let error):
-            lastRefusal = error
-            signal(.failed)
-        case .completed:
-            // Signalled by `follow`, after the delay.
-            break
+        case .readTheirs: signal(.readTheirs)
+        case .completed: signal(.completed)
+        case .refused: signal(.failed)
         }
     }
 
-    private func scannerFailed(_ failure: QRCodeScannerView.Failure) {
-        scannerProblem = failure
-        onScannerFailure(failure)
+    // MARK: Screen
+
+    private var screen: UIScreen? {
+        UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.screen }.first
     }
 
-    private func leaveCodeScreen() {
-        if case .bothWays(let contact) = pairing.progress {
-            finish(.paired(contact.displayName))
-        } else {
-            // Cancelled: nothing was saved, nothing to report.
-            finish(nil)
-        }
+    /// Full brightness and no auto-lock while the code is being shown.
+    private func begin() {
+        previousBrightness = screen?.brightness
+        screen?.brightness = 1
+        UIApplication.shared.isIdleTimerDisabled = true
     }
 
-    private func finish(_ outcome: PairingOutcome?) {
-        self.outcome = outcome
-        screen = .start
-        pairing.restart()
-    }
-
-    private struct FollowKey: Equatable {
-        let screen: Screen
-        let progress: FaceToFacePairing.Progress
-    }
-
-    private func follow() async {
-        guard screen == .code else { return }
-        switch pairing.progress {
-        case .looking, .refused:
-            // Nothing read: the other phone may have given up already, and
-            // nothing tells this one. Stop, and say so in a way that is felt.
-            guard await wait(timing.idleLimit) else { return }
-            signal(.failed)
-            finish(lastRefusal.map(PairingOutcome.refused) ?? .nothingRead)
-        case .readTheirs:
-            // FaceToFacePairing times this out itself.
-            break
-        case .bothWays(let contact):
-            guard await wait(timing.completionSignalDelay) else { return }
-            signal(.completed)
-            guard await wait(max(0, timing.holdAfterCompletion - timing.completionSignalDelay)) else { return }
-            finish(.paired(contact.displayName))
-        case .timedOut(let contact):
-            signal(.failed)
-            finish(.timedOut(contact.displayName))
-        }
-    }
-
-    /// False when cancelled: the attempt moved on, or the screen went away.
-    private func wait(_ seconds: TimeInterval) async -> Bool {
-        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-        return !Task.isCancelled
+    private func end() {
+        if let previousBrightness { screen?.brightness = previousBrightness }
+        UIApplication.shared.isIdleTimerDisabled = false
     }
 }
 
@@ -230,63 +216,20 @@ extension FaceToFacePairingView where Debug == EmptyView {
                 errorCorrection: PairingQRCode.ErrorCorrection = .medium,
                 scan: (@MainActor (String) -> FaceToFacePairing.Event?)? = nil,
                 signal: @escaping @MainActor (PairingFeedback) -> Void = PairingSignal.live,
-                onCameraChange: @escaping @MainActor (QRCodeScannerView.Camera) -> Void = { _ in },
-                onScannerFailure: @escaping @MainActor (QRCodeScannerView.Failure) -> Void = { _ in },
-                timing: PairingTiming = .standard) {
+                onScannerFailure: @escaping @MainActor (QRCodeScannerView.Failure) -> Void = { _ in }) {
         self.init(pairing: pairing, errorCorrection: errorCorrection, scan: scan, signal: signal,
-                  onCameraChange: onCameraChange, onScannerFailure: onScannerFailure, timing: timing,
-                  debug: { EmptyView() })
+                  onScannerFailure: onScannerFailure, debug: { EmptyView() })
     }
-}
-
-/// How the last attempt ended, for the start screen.
-enum PairingOutcome: Equatable {
-    case paired(String)
-    /// Their code was read but they did not confirm in time. Nothing saved.
-    case timedOut(String)
-    /// The code screen was up for `idleLimit` without reading anything.
-    case nothingRead
-    case refused(PairingError)
 }
 
 /// What the person holding the phone should feel or hear.
 public enum PairingFeedback: Equatable, Sendable {
     /// Their code was read.
     case readTheirs
-    /// Both phones have each other's key; the contact is saved.
+    /// Both phones have each other's key.
     case completed
-    /// A refused code, the attempt timed out, or nothing was read.
+    /// A refused code.
     case failed
-}
-
-/// The waits around an attempt, in seconds. The confirmation timeout is
-/// `FaceToFacePairing`'s.
-public struct PairingTiming: Sendable {
-    /// From completing to vibrating. Starting values, to be tuned on
-    /// phones (2026-10-15).
-    public var completionSignalDelay: TimeInterval
-    /// How long the code stays up after completing.
-    public var holdAfterCompletion: TimeInterval
-    /// The code screen gives up after this long without reading anything,
-    /// counted from when it opened. Ends about 10 s after the other phone's
-    /// confirmation timeout, when that phone read this one but not the
-    /// reverse (seen on phones, 2026-10-15).
-    public var idleLimit: TimeInterval
-
-    public init(completionSignalDelay: TimeInterval, holdAfterCompletion: TimeInterval, idleLimit: TimeInterval) {
-        self.completionSignalDelay = completionSignalDelay
-        self.holdAfterCompletion = holdAfterCompletion
-        self.idleLimit = idleLimit
-    }
-
-    /// Ten minutes of idle in the Simulator, where codes are pasted by hand.
-    public static var standard: PairingTiming {
-#if targetEnvironment(simulator)
-        PairingTiming(completionSignalDelay: 1, holdAfterCompletion: 3, idleLimit: 600)
-#else
-        PairingTiming(completionSignalDelay: 1, holdAfterCompletion: 3, idleLimit: 15)
-#endif
-    }
 }
 
 /// How pairing is felt, heard and worded.

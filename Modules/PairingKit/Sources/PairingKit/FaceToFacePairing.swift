@@ -10,12 +10,11 @@
 //  storage. The view shows `codeToShow`, feeds every scanned text to
 //  `scanned(_:)`, and turns the returned event into feedback.
 //
-//  A contact is saved only on completion, when this phone knows both sides
-//  have each other's key (decided with the user, 2026-10-15). An attempt
-//  that read their code but got no confirmation within `confirmationTimeout`
-//  is aborted and leaves nothing behind. The one case this cannot rule out:
-//  the phone that completes first cannot know the other read its final
-//  code; if the other then times out, pairing again repairs it.
+//  A contact is saved as soon as its code is read (MVP, decided with the
+//  user 2026-10-15, after saving only on completion made re-pairing slow
+//  and unreliable on phones). The acknowledgement only tells both phones
+//  when the pairing went both ways. Nothing times out: the screen stays up
+//  until the person closes it, and doing it again is harmless.
 //
 
 import Foundation
@@ -25,15 +24,11 @@ public final class FaceToFacePairing: ObservableObject {
 
     public enum Progress: Equatable, Sendable {
         case looking
-        /// Their code is read, held in memory, not saved. They have not yet
-        /// shown that they read ours.
+        /// Their code is read and saved. They have not yet shown that they
+        /// read ours.
         case readTheirs(PairedContact)
-        /// Their code says they have ours too; the contact is saved. Final
-        /// for this attempt.
+        /// Their code says they have ours too. Final for this attempt.
         case bothWays(PairedContact)
-        /// Their code was read but no confirmation came in time. Nothing was
-        /// saved. Final for this attempt.
-        case timedOut(PairedContact)
         /// The only code seen so far was refused. A good one replaces this.
         case refused(PairingError)
     }
@@ -57,42 +52,27 @@ public final class FaceToFacePairing: ObservableObject {
     private let contacts: @MainActor () -> [PairedContact]
     private let store: @MainActor (PairedContact) -> Void
     private let now: @MainActor () -> Date
-    private let confirmationTimeout: TimeInterval
-    private var timeout: Task<Void, Never>?
     /// The other code stays in view the whole time; each distinct text is
     /// acted on once.
     private var seen: Set<String> = []
 
-    /// Seconds from reading their code to their confirmation, after which
-    /// the attempt is aborted. Longer in the Simulator, which has no camera:
-    /// codes are pasted there by hand.
-    public static var defaultConfirmationTimeout: TimeInterval {
-#if targetEnvironment(simulator)
-        return 120
-#else
-        return 5
-#endif
-    }
-
     /// - Parameters:
     ///   - contacts: the stored contacts, read at each scan.
-    ///   - store: called once, with a contact not stored yet, when the
-    ///     pairing completes. Never for an attempt that did not.
-    ///   - confirmationTimeout: see `defaultConfirmationTimeout`.
+    ///   - store: called once, with a contact not stored yet, as soon as its
+    ///     code is read. If the phones are pulled apart early, each side
+    ///     keeps what it read; doing it again completes the other side.
     public init(identityPublicKey: Data,
                 accountUUID: UUID,
                 displayName: String,
                 contacts: @escaping @MainActor () -> [PairedContact],
                 store: @escaping @MainActor (PairedContact) -> Void,
-                now: @escaping @MainActor () -> Date = { Date() },
-                confirmationTimeout: TimeInterval = FaceToFacePairing.defaultConfirmationTimeout) {
+                now: @escaping @MainActor () -> Date = { Date() }) {
         self.identityPublicKey = identityPublicKey
         self.accountUUID = accountUUID
         self.displayName = displayName
         self.contacts = contacts
         self.store = store
         self.now = now
-        self.confirmationTimeout = confirmationTimeout
     }
 
     /// The text for this device's QR code, or nil if the identity or the
@@ -109,10 +89,7 @@ public final class FaceToFacePairing: ObservableObject {
     /// - Returns: the event to signal, or nil when nothing changed.
     @discardableResult
     public func scanned(_ text: String) -> Event? {
-        switch progress {
-        case .bothWays, .timedOut: return nil
-        case .looking, .readTheirs, .refused: break
-        }
+        if case .bothWays = progress { return nil }
         guard seen.insert(text).inserted else { return nil }
 
         let evaluation: Pairing.Evaluation
@@ -134,41 +111,23 @@ public final class FaceToFacePairing: ObservableObject {
         // One attempt, one peer: a third phone's code is ignored, not stored.
         if let peer, peer.identityPublicKey != contact.identityPublicKey { return nil }
 
+        if case .newContact = evaluation.outcome { store(contact) }
         let isFirstRead = peer == nil
         peer = contact
 
         if evaluation.peerHasScannedUs {
-            timeout?.cancel()
-            timeout = nil
-            if case .newContact = evaluation.outcome { store(contact) }
             progress = .bothWays(contact)
             return .completed(contact)
         }
         guard isFirstRead else { return nil }
         progress = .readTheirs(contact)
-        startTimeout(for: contact)
         return .readTheirs(contact)
     }
 
     /// Forget this attempt (not the stored contacts) and start another.
     public func restart() {
-        timeout?.cancel()
-        timeout = nil
         seen = []
         peer = nil
         progress = .looking
-    }
-
-    private func startTimeout(for contact: PairedContact) {
-        timeout?.cancel()
-        let seconds = confirmationTimeout
-        timeout = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            guard let self, !Task.isCancelled, self.progress == .readTheirs(contact) else { return }
-            // Our code stops saying "I have yours": we do not.
-            self.peer = nil
-            self.timeout = nil
-            self.progress = .timedOut(contact)
-        }
     }
 }

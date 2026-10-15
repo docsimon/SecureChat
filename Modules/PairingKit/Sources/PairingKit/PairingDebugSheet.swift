@@ -53,7 +53,7 @@ struct PairingDebugSheet<Content: View>: View {
                 } header: {
                     Text("Their code")
                 } footer: {
-                    Text("As if the camera had read it. Starts an attempt if none is running. Simulators share the Mac's clipboard.")
+                    Text("As if the camera had read it. Simulators share the Mac's clipboard.")
                 }
 
                 content
@@ -73,7 +73,6 @@ struct PairingDebugSheet<Content: View>: View {
         case .looking: return "Looking"
         case .readTheirs(let contact): return "Read \(contact.displayName); waiting for their confirmation"
         case .bothWays(let contact): return "Paired both ways with \(contact.displayName)"
-        case .timedOut(let contact): return "Timed out waiting for \(contact.displayName)"
         case .refused(let error): return "Refused: \(error)"
         }
     }

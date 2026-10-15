@@ -126,13 +126,8 @@ final class SessionIntegrationTests: XCTestCase {
     func test_aContactWhoDoesNotHaveUs_staysSilent_andIsReportedUnanswered() async throws {
         let ada = try await makeRegisteredDevice(name: "Ada")
         let bob = try await makeRegisteredDevice(name: "Bob")
-        // The one case completion-only saving cannot rule out: Bob reads
-        // Ada's code, Ada reads Bob's "I have yours" and completes, but Bob
-        // never sees Ada's confirmation, so he saves nothing.
-        let adaPairing = ada.pairing(), bobPairing = bob.pairing()
-        _ = bobPairing.scanned(try IntegrationDevice.code(on: adaPairing))
-        _ = adaPairing.scanned(try IntegrationDevice.code(on: bobPairing))
-        XCTAssertEqual(ada.contacts.contacts.count, 1)
+        // Only Ada reads Bob's code: Bob never stores Ada.
+        _ = ada.pairing().scanned(try IntegrationDevice.code(on: bob.pairing()))
         XCTAssertTrue(bob.contacts.contacts.isEmpty)
         let adaChat = try conversation(on: ada, with: bob, over: try await connect(ada))
         _ = try await connect(bob)

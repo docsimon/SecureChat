@@ -2,20 +2,20 @@
 //  FaceToFacePairingView+Previews.swift
 //  PairingKit
 //
-//  The pairing screens in every state they can show, for iterating on how
-//  they look without two phones. Open this file in Xcode with the canvas on
-//  (⌥⌘↩) and pick a device in the canvas to see another size. The phones
-//  remain the judge of what a preview cannot show: reading distance,
-//  glare, and whether the vibration is felt.
-//
-//  The camera window is a still here: previews have no camera.
+//  The pairing screen in every state it can show, for iterating on how it
+//  looks without two phones. Open this file in Xcode with the canvas on
+//  (⌥⌘↩) and pick a device in the canvas to see another size (the iPhone
+//  SE is the smallest supported screen). The phones remain the judge of
+//  what a preview cannot show: reading distance, glare, and whether the
+//  vibration is felt. There is no camera here.
 //
 
 #if DEBUG
 import SwiftUI
 import CryptoKit
 
-/// A pairing attempt as previews need one.
+/// Pairing attempts put into a given state the way a real one gets there:
+/// by reading codes.
 @MainActor
 enum PairingPreviewState {
 
@@ -26,103 +26,82 @@ enum PairingPreviewState {
                           contacts: { [] }, store: { _ in })
     }
 
-    /// Their code read: our code now carries the acknowledgement.
+    /// Their code read; they have not read ours yet.
     static func readTheirs(name: String = "Grace") -> FaceToFacePairing {
         let pairing = looking()
-        _ = pairing.scanned(code(name: name))
+        _ = pairing.scanned(code(name: name, acknowledgingUs: false))
         return pairing
     }
 
-    private static func code(name: String) -> String {
+    static func bothWays(name: String = "Grace") -> FaceToFacePairing {
+        let pairing = looking()
+        _ = pairing.scanned(code(name: name, acknowledgingUs: true))
+        return pairing
+    }
+
+    static func refused() -> FaceToFacePairing {
+        let pairing = looking()
+        _ = pairing.scanned("https://example.com/menu")
+        return pairing
+    }
+
+    private static func code(name: String, acknowledgingUs: Bool) -> String {
         (try? PairingPayload(identityPublicKey: Curve25519.KeyAgreement.PrivateKey().publicKey.rawRepresentation,
-                             accountUUID: UUID(), displayName: name, acknowledging: nil).encoded()) ?? ""
+                             accountUUID: UUID(), displayName: name,
+                             acknowledging: acknowledgingUs ? ownKey : nil).encoded()) ?? ""
     }
 }
 
 /// As SecureChat presents it: in a navigation stack, with a Close button.
-private struct PreviewHost<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Add contact")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Close") {} }
-                }
-        }
-    }
-}
-
 @MainActor
-private func pairingScreen(_ screen: FaceToFacePairingView<EmptyView>.Screen,
-                           pairing: FaceToFacePairing = PairingPreviewState.looking(),
-                           outcome: PairingOutcome? = nil,
+private func pairingScreen(_ pairing: FaceToFacePairing,
                            problem: QRCodeScannerView.Failure? = nil) -> some View {
-    PreviewHost {
-        FaceToFacePairingView(pairing: pairing, signal: { _ in }, screen: screen, outcome: outcome,
-                              cameraFeed: .still, scannerProblem: problem) { EmptyView() }
+    NavigationStack {
+        FaceToFacePairingView(pairing: pairing, signal: { _ in }, cameraFeed: .none,
+                              scannerProblem: problem) { EmptyView() }
+            .navigationTitle("Add contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") {} }
+            }
     }
 }
 
-// MARK: Start screen
-
-#Preview("Start") {
-    pairingScreen(.start)
+#Preview("Looking") {
+    pairingScreen(PairingPreviewState.looking())
 }
 
-#Preview("Start · paired") {
-    pairingScreen(.start, outcome: .paired("Grace"))
+#Preview("Got them") {
+    pairingScreen(PairingPreviewState.readTheirs())
 }
 
-#Preview("Start · timed out, long name") {
-    pairingScreen(.start, outcome: .timedOut("Maximilian Alexander Ferdinand von Habsburg-Lothringen"))
+#Preview("Paired") {
+    pairingScreen(PairingPreviewState.bothWays())
 }
 
-#Preview("Start · nothing read") {
-    pairingScreen(.start, outcome: .nothingRead)
+#Preview("Refused") {
+    pairingScreen(PairingPreviewState.refused())
 }
 
-#Preview("Start · refused") {
-    pairingScreen(.start, outcome: .refused(.notAPairingCode))
+#Preview("Camera denied") {
+    pairingScreen(PairingPreviewState.looking(), problem: .accessDenied)
 }
 
-#Preview("Start · camera denied") {
-    pairingScreen(.start, problem: .accessDenied)
+#Preview("No camera") {
+    pairingScreen(PairingPreviewState.looking(), problem: .cameraUnavailable)
 }
 
-#Preview("Start · largest text") {
-    pairingScreen(.start, outcome: .timedOut("Grace"))
+#Preview("Long name") {
+    pairingScreen(PairingPreviewState.readTheirs(name: "Maximilian Alexander Ferdinand von Habsburg-Lothringen"))
+}
+
+#Preview("Largest text") {
+    pairingScreen(PairingPreviewState.readTheirs())
         .dynamicTypeSize(.accessibility5)
 }
 
-#Preview("Start · dark") {
-    pairingScreen(.start, outcome: .paired("Grace"))
-        .preferredColorScheme(.dark)
-}
-
-// MARK: Code screen
-
-#Preview("Code") {
-    pairingScreen(.code)
-}
-
-#Preview("Code · their code read") {
-    pairingScreen(.code, pairing: PairingPreviewState.readTheirs())
-}
-
-#Preview("Code · camera denied") {
-    pairingScreen(.code, problem: .accessDenied)
-}
-
-#Preview("Code · no camera") {
-    pairingScreen(.code, problem: .cameraUnavailable)
-}
-
-#Preview("Code · largest text, dark") {
-    pairingScreen(.code)
-        .dynamicTypeSize(.accessibility5)
+#Preview("Dark mode around it") {
+    pairingScreen(PairingPreviewState.bothWays())
         .preferredColorScheme(.dark)
 }
 #endif

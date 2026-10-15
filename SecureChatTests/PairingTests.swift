@@ -113,14 +113,14 @@ final class PairingTests: XCTestCase {
         guard case .unavailable = viewModel.phase else { return XCTFail("expected unavailable") }
     }
 
-    func test_theContactIsSaved_onlyWhenTheyHaveOursToo() throws {
+    func test_scanningTheirCode_storesTheContact_andCompletesWhenTheyHaveOurs() throws {
         let ownKey = Data(repeating: 1, count: 32)
         let (viewModel, repository) = try makeViewModel(
             identity: { LocalIdentity(identityPublicKey: ownKey, accountUUID: UUID()) })
         let bobUUID = UUID()
 
         let first = viewModel.scanned(try code(2, uuid: bobUUID))
-        XCTAssertTrue(repository.contacts.isEmpty, "not saved before they confirm")
+        XCTAssertEqual(repository.contacts.map(\.displayName), ["Bob"])
         guard case .pairing(let pairing) = viewModel.phase else { return XCTFail("expected pairing") }
         // Our code now tells Bob's phone that we have his.
         XCTAssertTrue(try PairingPayload(scanned: XCTUnwrap(pairing.codeToShow))
@@ -130,12 +130,7 @@ final class PairingTests: XCTestCase {
         let bob = try XCTUnwrap(repository.contacts.first)
         XCTAssertEqual(repository.contacts.count, 1)
         XCTAssertEqual(pairing.progress, .bothWays(bob))
-        XCTAssertEqual(second, .completed(bob))
-        // Saved as at completion: "paired at" is when the pairing finished,
-        // a moment after the first read.
-        guard case .readTheirs(let read) = first else { return XCTFail("expected readTheirs, got \(String(describing: first))") }
-        XCTAssertEqual(read.identityPublicKey, bob.identityPublicKey)
-        XCTAssertGreaterThanOrEqual(bob.pairedAt, read.pairedAt)
+        XCTAssertEqual([first, second], [.readTheirs(bob), .completed(bob)])
     }
 
     func test_aRefusedCode_isSignalled_andStoresNothing() throws {
@@ -150,8 +145,7 @@ final class PairingTests: XCTestCase {
     func test_whenTheContactCannotBeSaved_pairingStops_withoutASuccessSignal() throws {
         let (viewModel, repository) = try makeViewModel(db: FailingContactsDB())
 
-        // Their code already says they have ours: completing saves at once.
-        let event = viewModel.scanned(try code(2, acknowledging: Data(repeating: 1, count: 32)))
+        let event = viewModel.scanned(try code(2))
 
         guard case .unavailable = viewModel.phase else { return XCTFail("expected unavailable") }
         XCTAssertTrue(repository.contacts.isEmpty)

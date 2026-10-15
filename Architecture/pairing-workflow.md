@@ -127,52 +127,42 @@ The rules of one attempt are `FaceToFacePairing` in `PairingKit`: the view
 shows `codeToShow`, feeds it every scanned text, and signals the event it
 returns.
 
-**Saved only on completion (decided with the user, 2026-10-15; replaces
-"stored as soon as read").** A phone saves the contact only when it knows
-both sides have each other's key: their code read, and their code saying
-"I have yours". If that confirmation does not come within 5 s of reading
-their code, the attempt is aborted and nothing is saved.
+A contact is saved as soon as its code is read. The acknowledgement only
+tells both phones when the pairing went both ways.
 
-**The one case this cannot rule out.** Over a one-way channel there is
-always a last code whose sender cannot know it was read. The phone that
-completes first has saved the contact; if the other then times out, only
-one side has it (its messages show "didn't answer"). Pairing again repairs
-it: the first phone already has the contact, the other saves it, both
-complete. To make this rare, the phone that completes keeps its code up for
-3 s and vibrates only after 1 s, so nobody pulls away before the other phone
-has read it. 1 s, 3 s and 5 s are starting values, to be tuned on phones
-(the bench logs the gap between "read their code" and "paired both ways").
+## One screen (MVP, 2026-10-15)
 
-## Two screens (2026-10-15)
+One line of instructions, the QR code as large as the screen allows (white,
+full brightness, no auto-lock), one status line: "Looking for the other
+phone…", "Got Grace. Keep holding…", "Paired with Grace". The front camera
+reads unseen. Feedback: a tap when their code is read, the full vibration
+and a sound when both phones have each other's key, an error buzz for a
+refused code. Nothing times out and nothing moves on by itself: the screen
+stays until "Close" / "Done".
 
-1. **Start:** what to do, how the last attempt ended (paired, didn't
-   finish, nothing read, refused), and "Pair". It scrolls, so any text size
-   works.
-2. **Code:** only the QR code, as large as the screen allows, white, full
-   brightness, no auto-lock. The front camera reads unseen; the rear one
-   shows a small viewfinder to aim with. "Done" goes back. After 15 s
-   without reading anything it goes back by itself, with the error buzz.
-
-Feedback, since nobody sees their screen: a tap when their code is read,
-the full vibration and a sound on completion, an error buzz for a refused
-code, a timeout, or nothing read.
+If only one phone has read the other (pulled apart early), that phone has
+the contact and says "Got …"; holding the phones together again, on the
+same screen, completes the other side. Doing it all again is harmless: an
+existing contact is not saved twice.
 
 **On phones, 2026-10-15:** SecureChat (iPhone 16 Plus) and
-`SessionTestApp` (iPhone X) paired with the two screens: saved on both
-after completion. Pulling apart early: see below.
+`SessionTestApp` (iPhone X) pair with this screen; reported working by the
+user.
 
-**Pulled apart after one read (seen on phones, 2026-10-15).** If only one
-phone has read the other, that one times out after 5 s and says "didn't
-finish"; the other has read nothing and nothing tells it the attempt is
-over. It was left on its code for 60 s; now it stops after 15 s with the
-error buzz and "the other phone's code wasn't read". Neither saves
-anything. 15 s is counted from opening the code screen, so it also covers
-bringing the phones together: a value to tune, like 1, 3 and 5 s.
-
-Debug builds add a "Debug" button on both screens: this phone's code as
-text, a field to use a code by hand (the Simulator has no camera; there the
-timeouts are minutes, not seconds), the attempt's state, and each app's own
+At large text sizes the words shrink, not the code. Debug builds add a
+"Debug" button: this phone's code as text, a field to use a code by hand
+(the Simulator has no camera), the attempt's state, and each app's own
 lines (account id; for the harnesses, relay or bench settings).
+
+**Why not more (tried and dropped, 2026-10-15).** A two-screen version
+(start screen, code-only screen) that saved only on completion, with a 5 s
+confirmation timeout, a 15 s idle stop, a 1 s vibration delay and a 3 s
+hold, made re-pairing slow and unreliable on phones: it still could not
+rule out one phone completing while the other timed out (over a one-way
+channel the sender of the last code cannot know it was read), and every
+retry had to restart from the start screen. It is in commit `9f35771`. The
+rear-camera switch went with it; the front camera read fine on both the
+iPhone 16 Plus and the fixed-focus iPhone X.
 
 Nobody sees their own screen in this position, so the result must be felt or
 heard. Confirmed on both phones on 2026-10-13: the full vibration
@@ -182,8 +172,6 @@ could not be felt, cause not established.
 **The acknowledgement is a convenience, not a proof.** It is a hash of a
 public key and anyone can produce it. A false one only makes the liar's own
 contact useless. The first session remains what confirms a pairing.
-
-The rear camera stays available on the same screen as the fallback.
 
 ## What a scan does not prove
 
@@ -226,23 +214,19 @@ it. An attacker would have to replace what is on the screen.
 - **The Simulator has no camera.** The harness has "Copy code as text" and a
   paste field, so two Simulators, or a Simulator and a phone, can pair. A
   phone can also scan the code off a Simulator window on the Mac.
-- **One pairing flow, in PairingKit** (since 2026-10-15):
-  `FaceToFacePairingView` (the two screens above and the debug sheet),
-  `PairingSignal` (vibration, sound, refusal wording) and `PairingTiming`. SecureChat,
+- **One pairing screen, in PairingKit** (since 2026-10-15):
+  `FaceToFacePairingView` (the screen above and the debug sheet) and
+  `PairingSignal` (vibration, sound, refusal wording). SecureChat,
   `PairingTestApp` and `SessionTestApp` all show it, so every iteration of
   how pairing looks and feels is tried on the bench and phones exactly as
   it ships. Hosts add only their own: which scans count and what is logged
   (`scan:`), and lines in the debug sheet (the bench's error-correction
   toggle).
-- **Previews** (`FaceToFacePairingView+Previews.swift`, Debug only): both
-  screens in every state (start: fresh, paired, timed out with a 54-byte
-  name, nothing read, refused, camera denied, largest text, dark; code:
-  looking, their code read, camera denied, no camera, largest text in
-  dark). The camera window is a still. Open the file in Xcode with the
-  canvas on to iterate without phones.
-- The large-text problem of the one-screen version (title cut off, QR at
-  half width) is what led to the two screens; the code screen keeps the QR
-  at full width at the largest text size.
+- **Previews** (`FaceToFacePairingView+Previews.swift`, Debug only): the
+  screen in every state (looking, got them, paired, refused, camera denied,
+  no camera, a 54-byte name, largest text, dark mode around it), reached by
+  reading real codes. Open the file in Xcode with the canvas on to iterate
+  without phones.
 - **Face to face in the harness:** "Pair face to face (front camera)", on
   the shared screen (`FaceToFaceBenchView`). Read times are written to the
   harness log. Pairing both ways was

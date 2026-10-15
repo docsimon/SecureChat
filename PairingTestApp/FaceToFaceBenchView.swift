@@ -18,7 +18,6 @@ struct FaceToFaceBenchView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var lowCorrection = false
-    @State private var camera: QRCodeScannerView.Camera = .front
     @State private var openedAt = Date()
     /// When this attempt first read the other code.
     @State private var readAt: Date?
@@ -43,7 +42,6 @@ struct FaceToFaceBenchView: View {
                     if let event { record(event) }
                     return event
                 },
-                onCameraChange: { camera in self.camera = camera },
                 onScannerFailure: { model.scannerFailed($0) }) {
                 Section("Bench") {
                     Toggle("Bigger squares (less error correction)", isOn: $lowCorrection)
@@ -58,26 +56,16 @@ struct FaceToFaceBenchView: View {
             }
         }
         .onAppear(perform: restartClock)
-        .onReceive(pairing.$progress) { progress in
-            switch progress {
-            case .looking:
-                restartClock()   // a new attempt: Pair tapped, or the camera switched
-            case .timedOut(let contact):
-                model.note("Timed out waiting for \(contact.displayName) to confirm")
-            case .readTheirs, .bothWays, .refused:
-                break
-            }
-        }
     }
 
     private func record(_ event: FaceToFacePairing.Event) {
-        // The only clock that starts at a known moment is tapping Pair,
+        // The only clock that starts at a known moment is the screen opening,
         // so the first figure includes however long it took to get the two
         // phones in front of each other. The second is the one that says
         // something about reading: the gap between the two reads.
         let now = Date()
-        let sinceOpened = String(format: "%.1f s after Pair was tapped", now.timeIntervalSince(openedAt))
-        let settings = "\(camera == .front ? "front" : "rear") camera, \(lowCorrection ? "low" : "medium") error correction on this screen"
+        let sinceOpened = String(format: "%.1f s after this screen opened", now.timeIntervalSince(openedAt))
+        let settings = "\(lowCorrection ? "low" : "medium") error correction on this screen"
         switch event {
         case .readTheirs:
             readAt = now

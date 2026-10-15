@@ -51,7 +51,8 @@ struct ChatListScreen: View {
                 }
                 ForEach(dep.contactRepo.contacts) { contact in
                     NavigationLink(value: contact.accountUUID) {
-                        ChatRow(contact: contact, last: dep.messageStore.messages(with: contact.accountUUID).last)
+                        ChatRow(contact: contact, last: dep.messageStore.messages(with: contact.accountUUID).last,
+                                presence: dep.relayConnection.peerStatus[contact.accountUUID]?.presence)
                     }
                 }
             }
@@ -90,10 +91,14 @@ struct ChatListScreen: View {
 private struct ChatRow: View {
     let contact: PairedContact
     let last: StoredMessage?
+    let presence: Presence?
 
     var body: some View {
         VStack(alignment: .leading) {
-            Text(contact.displayName)
+            HStack(spacing: 6) {
+                Text(contact.displayName)
+                PresenceDot(presence: presence)
+            }
             Group {
                 if let last {
                     Text(last.text).lineLimit(1)

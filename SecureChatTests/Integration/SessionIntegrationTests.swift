@@ -94,6 +94,8 @@ final class SessionIntegrationTests: XCTestCase {
         XCTAssertEqual(adaChat.messages.map(\.status), [.sent, .received])
         XCTAssertEqual(bobChat.messages.map(\.status), [.received, .sent])
         XCTAssertEqual(bobChat.status, .open)
+        XCTAssertEqual(adaChat.presence, .online)
+        XCTAssertEqual(bobChat.presence, .online)
         XCTAssertEqual(server.issuedTokenCount, 2, "each device connects with its own session token")
     }
 
@@ -119,7 +121,9 @@ final class SessionIntegrationTests: XCTestCase {
         adaChat.draft = "Anyone there?"
         adaChat.send()
 
+        XCTAssertNil(adaChat.presence, "nothing known before the first try")
         try await waitUntil("offline") { adaChat.status == .offline }
+        XCTAssertEqual(adaChat.presence, .offline)
         XCTAssertEqual(adaChat.messages.map(\.status), [.notDelivered])
     }
 
@@ -136,6 +140,7 @@ final class SessionIntegrationTests: XCTestCase {
         adaChat.send()
 
         try await waitUntil("unanswered") { adaChat.status == .unanswered }
+        XCTAssertEqual(adaChat.presence, .offline, "silent looks the same as away")
         XCTAssertEqual(adaChat.messages.map(\.status), [.notDelivered])
         XCTAssertTrue(bob.messages.messages(with: try ada.accountUUID).isEmpty, "a stranger's message is never stored")
     }
@@ -164,6 +169,7 @@ final class SessionIntegrationTests: XCTestCase {
 
         relay.drop(try ada.accountUUID)
         XCTAssertEqual(adaChat.status, .connecting)
+        XCTAssertNil(adaChat.presence, "nothing known while this phone is not connected")
 
         try await waitUntil("session reopened") { adaChat.status == .open }
         adaChat.draft = "Still here"

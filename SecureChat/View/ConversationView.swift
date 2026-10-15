@@ -34,6 +34,14 @@ struct ConversationView: View {
         }
         .navigationTitle(viewModel.contact.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 6) {
+                    Text(viewModel.contact.displayName).font(.headline)
+                    PresenceDot(presence: viewModel.presence)
+                }
+            }
+        }
         .safeAreaInset(edge: .top) {
             if !viewModel.statusText.isEmpty {
                 Text(viewModel.statusText)

@@ -51,6 +51,12 @@ final class ConversationViewModel {
         }
     }
 
+    /// For the dot next to the name.
+    var presence: Presence? {
+        guard connection.state == .connected else { return nil }
+        return connection.peerStatus[contact.accountUUID]?.presence
+    }
+
     var statusText: String {
         switch status {
         case .connecting: return "Connecting…"

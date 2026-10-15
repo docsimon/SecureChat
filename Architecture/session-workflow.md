@@ -163,6 +163,32 @@ Running it: `docker compose up` in `AuthServer/` (the relay is part of it;
 - Not protected by A: messages on an unlocked phone; deleted messages
   recoverable from free pages and journals. That is B's job.
 
+### Presence (2026-10-15)
+
+A dot next to a contact's name, in the chat list and the chat's title
+(`PresenceDot`). The relay has no presence, so it shows only what this
+phone has learned on the current connection:
+
+| Dot | When |
+|---|---|
+| green | a session with them is open |
+| red | the last try found them offline, or they did not answer |
+| none | nothing tried yet on this connection, a handshake still running, or this phone is not connected |
+
+**Known limit: green goes stale.** When the contact closes the app, nothing
+tells this phone; the dot stays green until the next message comes back
+"offline". The chat list shows no dot for contacts whose chat has not been
+opened since the app came to the foreground (no probing: a handshake with
+every contact on each connect was judged too much for the MVP).
+
+**To do: the relay's "contact left" notice.** When a connection closes, the
+relay sends a "peer unavailable" frame to the connections that exchanged
+frames with it during that connection, and the app turns their dot red.
+Costs: the relay keeps, per connection and only while it is open, the set of
+accounts it routed frames to and from. Decide whether that state is
+acceptable (architecture-decisions.md: routing state deleted on disconnect,
+which this still is) before building it.
+
 ### Phone test (done 2026-10-15)
 
 The iPhone X cannot run SecureChat, so it runs `SessionTestApp`, which
@@ -177,7 +203,9 @@ two Simulators.
 
 ## Next
 
-2. Message storage B: per-contact encryption of the message text.
+1. Message storage B: per-contact encryption of the message text.
+2. Relay "contact left" notice, so the presence dot does not stay green
+   (see "Presence").
 3. Slice 2: Double Ratchet on the same frames.
 
 ## Known limits (reviewed 2026-10-14, SecureChat items 2026-10-15)

@@ -127,6 +127,52 @@ Running it: `docker compose up` in `AuthServer/` (the relay is part of it;
 `.env` sets `RELAY_DEV_CLAIMED_ACCOUNTS=true`). Relay tests:
 `./gradlew test` in `RelayServer/` with JDK 21.
 
+## Next: SecureChat (hand-off, 2026-10-15)
+
+The agreed next step. Opening a chat with a paired contact opens a session
+through the relay. What the code looks like today, and what is still to
+decide:
+
+**Facts about the current SecureChat code**
+
+- The chat model is a placeholder from before registration: `Chat`,
+  `Guest`, `Message` tables, `ChatRepository` and `WebsocketClient`
+  connecting to `GlobalState.webSocketURL` = `ws://localhost:8080`, an old
+  Node echo mock. Port 8080 is now the Auth Server. Contacts live apart, in
+  the `contacts` table (`ContactRepository`); contacts are not linked to
+  chats.
+- `LocalIdentityProvider` returns only the PUBLIC key. Sessions need the
+  private key: `IdentityKeyStore.live.loadExisting()` for a registered
+  device, and `DebugLocalIdentity` already stores a private key in
+  UserDefaults but does not hand it out yet.
+- Credentials: registered devices get a token from
+  `SessionClient(baseURL:signer:).openSession(accountUuid:)` (RegistrationKit;
+  the `AttestationCoordinator` is the `AssertionSigning`: a local Secure
+  Enclave signature, no Apple server call). Debug builds that skip
+  registration use `.developmentAccount(<debug account UUID>)`, as the
+  harness does. Token TTL is 15 min, checked at connect only.
+- Relay URL: Debug = `ws://<AuthServerConfig LAN IP>:8081/relay`
+  (Simulator could use localhost); Release has no address yet (same `#error`
+  pattern as `AuthServerEnvironment`).
+- `SessionService` takes a concrete `RelayClient`. SecureChat integration
+  tests (two devices register → pair → open a session, all in process) need
+  a transport seam in SessionKit (a small protocol the service talks to,
+  with an in-process relay for tests).
+
+**Decisions to put to the user first**
+
+1. Replace the placeholder chat stack (tables, `ChatRepository`,
+   `WebsocketClient`) with a contact-based chat, or adapt it.
+2. Message storage: plain SQLite for now (encryption at rest is a known
+   later item, §10) or encrypted from the start.
+3. Relay connection policy: connect on foreground, disconnect on
+   background, reconnect after a drop (suggested).
+
+**Then build:** identity with private key → relay connection manager →
+chat screen bound to a contact (session state: open / starting / offline /
+did not answer) → integration tests → phone test with two devices (the
+iPhone X runs `SessionTestApp`, since it cannot run SecureChat).
+
 ## Known limits (reviewed 2026-10-14)
 
 - **No delivery confirmation.** A message handed to the relay may still be

@@ -121,7 +121,7 @@ one place (`RoutingID`) so a derived rendezvous id can replace it later
 | Relay | `RelayServer/`, 7 tests (delivery with sender id rewritten, peer unavailable, wrong size closes, no or wrong credentials refused, dev flag off refuses claimed accounts). Runs in docker on 8081; logs connection counts only, never ids |
 | End to end | `LiveRelayTests` (opt-in, `TEST_RUNNER_SESSIONKIT_LIVE_RELAY=ws://localhost:8081/relay`): two `SessionService`s open a session through the docker relay and exchange text; an offline contact is reported. Passed 2026-10-14 |
 | `SessionTestApp` | Used by hand on 2026-10-15: contacts added by pasted code, both connected, session opened, messages sent both ways; "unanswered" (contact removed on one side) and "offline" (one side disconnected) also seen |
-| SecureChat | Built 2026-10-15 (see "SecureChat" below). 31 SecureChat tests pass on the Simulator, 7 of them session integration tests. Launched on the Simulator: chat list shown, relay connected with the development account. Not yet tested on phones |
+| SecureChat | Built 2026-10-15 (see "SecureChat" below). SecureChat tests pass on the Simulator, 7 of them session integration tests. **On phones, 2026-10-15** (SecureChat on the iPhone 16 Plus, `SessionTestApp` on the iPhone X, development accounts): paired face to face, messages both ways, offline, didn't answer, background and back; reported working by the user |
 
 Running it: `docker compose up` in `AuthServer/` (the relay is part of it;
 `.env` sets `RELAY_DEV_CLAIMED_ACCOUNTS=true`). Relay tests:
@@ -163,7 +163,7 @@ Running it: `docker compose up` in `AuthServer/` (the relay is part of it;
 - Not protected by A: messages on an unlocked phone; deleted messages
   recoverable from free pages and journals. That is B's job.
 
-### Phone test (to do)
+### Phone test (done 2026-10-15)
 
 The iPhone X cannot run SecureChat, so it runs `SessionTestApp`, which
 since 2026-10-15 also pairs face to face ("Pair face to face": PairingKit's
@@ -177,7 +177,6 @@ two Simulators.
 
 ## Next
 
-1. Phone test of SecureChat sessions (above).
 2. Message storage B: per-contact encryption of the message text.
 3. Slice 2: Double Ratchet on the same frames.
 

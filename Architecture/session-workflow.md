@@ -120,7 +120,7 @@ one place (`RoutingID`) so a derived rendezvous id can replace it later
 | `SessionKit` | Noise `KK` matches the published test vector (handshake hash and transport). 18 unit tests: stranger refused without a reply, contact id without the key refused, simultaneous open, offline peer, silent peer abandoned, peer restart, tampering, every frame 8,320 bytes, too-long text, nothing queued for a non-contact. `RelayClient` and `SessionService` built |
 | Relay | `RelayServer/`, 7 tests (delivery with sender id rewritten, peer unavailable, wrong size closes, no or wrong credentials refused, dev flag off refuses claimed accounts). Runs in docker on 8081; logs connection counts only, never ids |
 | End to end | `LiveRelayTests` (opt-in, `TEST_RUNNER_SESSIONKIT_LIVE_RELAY=ws://localhost:8081/relay`): two `SessionService`s open a session through the docker relay and exchange text; an offline contact is reported. Passed 2026-10-14 |
-| `SessionTestApp` | Builds for Simulator and device; launches. **Not yet used by hand** (two Simulators, or a Simulator and a phone) |
+| `SessionTestApp` | Used by hand on 2026-10-15: contacts added by pasted code, both connected, session opened, messages sent both ways; "unanswered" (contact removed on one side) and "offline" (one side disconnected) also seen |
 | SecureChat | Not started |
 
 Running it: `docker compose up` in `AuthServer/` (the relay is part of it;

@@ -68,6 +68,12 @@ final class SQLiteDB: DatabaseStrategy {
         ))
     }
 
+    func addMessages(_ messages: [SealedMessage]) throws {
+        try db.transaction {
+            for message in messages { try addMessage(message) }
+        }
+    }
+
     func updateStatus(of ids: [UUID], to status: StoredMessage.Status) throws {
         guard !ids.isEmpty else { return }
         try db.run(MessagesTable.messages.filter(ids.contains(MessagesTable.id))

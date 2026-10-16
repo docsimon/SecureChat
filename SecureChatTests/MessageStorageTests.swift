@@ -197,6 +197,36 @@ final class MessageStorageTests: XCTestCase {
         XCTAssertNil(fileBytes(path).range(of: Data("old secret".utf8)), "no plaintext left in any page")
     }
 
+    /// A Keychain read per message froze the first launch over an earlier
+    /// build on a phone (2026-10-16): each key is read once.
+    func test_eachContactsKey_isReadOnce_notOncePerMessage() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = directory.appending(path: "many.sqlite3").path
+        let ada = UUID(), bob = UUID()
+        let earlier = try Connection(path)
+        try earlier.run("CREATE TABLE messages (id TEXT PRIMARY KEY NOT NULL, peer TEXT NOT NULL, text TEXT NOT NULL, date TEXT NOT NULL, status INTEGER NOT NULL)")
+        for i in 0..<100 {
+            try earlier.run(Table("messages").insert(
+                MessagesTable.id <- UUID(), MessagesTable.peer <- (i.isMultiple(of: 2) ? ada : bob),
+                SQLite.Expression<String>("text") <- "message \(i)",
+                MessagesTable.date <- Date(timeIntervalSince1970: Double(i)),
+                MessagesTable.status <- StoredMessage.Status.sent.rawValue))
+        }
+        var reads: [UUID: Int] = [:]
+        let keys = MessageKeyStore.inMemory { reads[$0, default: 0] += 1 }
+
+        // Sealing the old rows, opening them all, then sending more.
+        let store = MessageStore(db: try SQLiteDB(path: path), keys: keys, keepKeysFor: [ada, bob])
+        for _ in 0..<10 { store.add(StoredMessage(peer: ada, text: "new", status: .sent)) }
+
+        XCTAssertEqual(store.messages(with: ada).count, 60)
+        XCTAssertEqual(reads, [ada: 1, bob: 1])
+        // And once per launch after that.
+        reads = [:]
+        _ = MessageStore(db: try SQLiteDB(path: path), keys: keys, keepKeysFor: [ada, bob])
+        XCTAssertEqual(reads, [ada: 1, bob: 1])
+    }
+
     func test_keysOfPeopleNoLongerHere_areDeleted_atLaunch() throws {
         let keys = MessageKeyStore.inMemory()
         let ada = UUID(), gone = UUID()

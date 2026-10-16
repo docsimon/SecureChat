@@ -24,6 +24,8 @@ protocol DatabaseStrategy {
     /// Oldest first.
     func fetchMessages() throws -> [SealedMessage]
     func addMessage(_ message: SealedMessage) throws
+    /// All or none, in one write to disk.
+    func addMessages(_ messages: [SealedMessage]) throws
     func updateStatus(of ids: [UUID], to status: StoredMessage.Status) throws
     func deleteMessages(with peer: UUID) throws
     /// Messages stored in plain text by builds before storage option B,

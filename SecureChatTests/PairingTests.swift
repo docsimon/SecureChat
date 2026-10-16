@@ -162,6 +162,7 @@ private struct FailingContactsDB: DatabaseStrategy {
 
     func fetchMessages() throws -> [SealedMessage] { [] }
     func addMessage(_ message: SealedMessage) throws {}
+    func addMessages(_ messages: [SealedMessage]) throws {}
     func updateStatus(of ids: [UUID], to status: StoredMessage.Status) throws {}
     func deleteMessages(with peer: UUID) throws {}
     func plaintextMessages() throws -> [StoredMessage] { [] }

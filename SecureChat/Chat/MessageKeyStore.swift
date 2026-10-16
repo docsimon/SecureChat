@@ -37,10 +37,11 @@ struct MessageKeyStore {
 
 #if DEBUG
     /// Tests only: lives as long as the value and touches nothing.
-    static func inMemory() -> MessageKeyStore {
+    /// `onRead` sees every read, which on a phone is a Keychain round trip.
+    static func inMemory(onRead: @escaping (UUID) -> Void = { _ in }) -> MessageKeyStore {
         final class Box { var keys: [UUID: Data] = [:] }
         let box = Box()
-        return MessageKeyStore(read: { box.keys[$0] }, write: { box.keys[$0] = $1 },
+        return MessageKeyStore(read: { onRead($0); return box.keys[$0] }, write: { box.keys[$0] = $1 },
                                remove: { box.keys[$0] = nil }, stored: { Array(box.keys.keys) })
     }
 #endif

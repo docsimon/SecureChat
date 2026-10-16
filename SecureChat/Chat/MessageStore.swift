@@ -10,6 +10,7 @@
 //
 
 import Foundation
+import CryptoKit
 
 @MainActor @Observable
 final class MessageStore {
@@ -18,6 +19,9 @@ final class MessageStore {
 
     @ObservationIgnored private let db: DatabaseStrategy
     @ObservationIgnored private let keys: MessageKeyStore
+    /// Each contact's key, read once: a Keychain read per message froze
+    /// the first launch over hundreds of messages on a phone.
+    @ObservationIgnored private var keyCache: [UUID: SymmetricKey] = [:]
 
     /// - Parameter keepKeysFor: contacts whose keys must stay. Any other
     ///   key is deleted (a reinstall leaves the Keychain behind).
@@ -77,14 +81,30 @@ final class MessageStore {
     /// The contact stays; a next message gets a new key.
     func deleteMessages(with peer: UUID) throws {
         try keys.delete(for: peer)
+        keyCache[peer] = nil
         byPeer[peer] = nil
         try db.deleteMessages(with: peer)
     }
 
     // MARK: Sealing
 
+    private func key(for peer: UUID) throws -> SymmetricKey {
+        if let cached = keyCache[peer] { return cached }
+        let key = try keys.key(for: peer)
+        keyCache[peer] = key
+        return key
+    }
+
+    /// Nil when the contact has no key: their stored messages are gone.
+    private func existingKey(for peer: UUID) throws -> SymmetricKey? {
+        if let cached = keyCache[peer] { return cached }
+        let key = try keys.existingKey(for: peer)
+        keyCache[peer] = key
+        return key
+    }
+
     private func seal(_ message: StoredMessage) throws -> SealedMessage {
-        let key = try keys.key(for: message.peer)
+        let key = try key(for: message.peer)
         return SealedMessage(id: message.id, peer: message.peer,
                              sealedText: try MessageSeal.seal(message.text, id: message.id, peer: message.peer, key: key),
                              date: message.date, status: message.status)
@@ -93,7 +113,7 @@ final class MessageStore {
     private func open(_ row: SealedMessage) -> StoredMessage {
         var text = StoredMessage.unreadableText
         do {
-            if let key = try keys.existingKey(for: row.peer) {
+            if let key = try existingKey(for: row.peer) {
                 text = try MessageSeal.open(row.sealedText, id: row.id, peer: row.peer, key: key)
             }
         } catch {
@@ -114,9 +134,7 @@ final class MessageStore {
             }
             // A run that stopped halfway has sealed some already.
             let sealed = Set(try db.fetchMessages().map(\.id))
-            for message in plaintext where !sealed.contains(message.id) {
-                try db.addMessage(try seal(message))
-            }
+            try db.addMessages(plaintext.filter { !sealed.contains($0.id) }.map(seal))
             try db.dropPlaintextMessages()
             SCLogger.logger.info(message: "Sealed \(plaintext.count) plain-text messages", category: .Database)
         } catch {

@@ -136,7 +136,7 @@ Running it: `docker compose up` in `AuthServer/` (the relay is part of it;
 | Question | Decision |
 |---|---|
 | Placeholder chat stack (`Chat`, `Guest`, `Message`, `ChatRepository`, `WebsocketClient` to the old echo mock) | Replaced. **A chat is a paired contact**, keyed by its account id. The old tables are dropped on first launch; `contacts` is kept |
-| Message storage | **A now, B next.** A = OS protection only (below). B = each message's text encrypted with a per-contact key in the Keychain, so deleting the key shreds the chat (§10 crypto-shredding). SQLCipher rejected: a dependency, and no per-contact deletion |
+| Message storage | **A, then B (both built 2026-10-15).** A = OS protection only (below). B = each message's text encrypted with a per-contact key in the Keychain, so deleting the key shreds the chat (§10 crypto-shredding). SQLCipher rejected: a dependency, and no per-contact deletion |
 | Relay connection | Connected in the foreground, closed in the background (not on "inactive"), reopened after a drop with backoff 1, 2, 5, 10 s (10 s repeating). No separate network-change watcher: the backoff covers a network that comes back. The backoff only resets after a connection has lasted 10 s: the relay opens the socket before refusing a credential, so a refused one would otherwise retry every second, each time asking the Auth Server for a token |
 
 ### Pieces
@@ -164,6 +164,32 @@ Running it: `docker compose up` in `AuthServer/` (the relay is part of it;
   iOS may prewarm the process before the phone is unlocked.
 - Not protected by A: messages on an unlocked phone; deleted messages
   recoverable from free pages and journals. That is B's job.
+
+### Message storage (option B, 2026-10-15)
+
+- **One key per contact** (`MessageKeyStore`): 256 bits, a Keychain item
+  readable only while unlocked and never restored to another device
+  (`WhenUnlockedThisDeviceOnly`), created with the first message.
+- **Every message's text is sealed** before it reaches the database
+  (`MessageSeal`: ChaChaPoly, authenticated with the message id and the
+  contact's id, so a row moved to another message or chat does not open).
+  The database holds only the sealed bytes; `MessageStore` callers did not
+  change.
+- **Deleting a chat** (swipe on the chat list, "Delete messages") deletes
+  the key first, then the rows. Whatever copy is left on disk can no longer
+  be read: crypto-shredding. The contact stays; the next message gets a new
+  key.
+- **Plain text from an earlier build** is sealed on first launch, the old
+  table dropped and the file rewritten (VACUUM). `secure_delete` is on, so
+  deleted rows are overwritten too.
+- **Keys of contacts no longer on the phone** are deleted at launch (a
+  reinstall deletes the database but not the Keychain).
+- A row that cannot be opened (key gone, bytes changed) shows as "This
+  message can't be read."
+
+**Known limits.** Who, when and the status of each message are not sealed
+(the contacts table holds who anyway). While the app runs, the messages
+it shows are in memory in the clear. Deleting a contact is not built.
 
 ### Presence (2026-10-15)
 
@@ -207,13 +233,13 @@ two Simulators.
 
 - iPhone 16 Plus: SecureChat, the plain "SecureChat" scheme (Debug skips
   registration: debug identity, development account at the relay).
-- iPhone X: `SessionTestApp`, connected to `ws://192.168.0.84:8081/relay`.
+- iPhone X: `SessionTestApp`, connected to `ws://docs-MacBook-Pro-2.local:8081/relay`
+  (the Mac's local name since 2026-10-15; it was the LAN IP, which DHCP changes).
 - Both need the docker relay with `RELAY_DEV_CLAIMED_ACCOUNTS=true`.
 
 ## Next
 
-1. Message storage B: per-contact encryption of the message text.
-2. Slice 2: Double Ratchet on the same frames.
+1. Slice 2: Double Ratchet on the same frames.
 
 ## Known limits (reviewed 2026-10-14, SecureChat items 2026-10-15)
 

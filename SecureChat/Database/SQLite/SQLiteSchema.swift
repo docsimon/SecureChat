@@ -11,6 +11,7 @@ import SQLite
 
 protocol SQLiteSchemaProtocol {
     func dropPlaceholderTables(db: Connection) throws
+    func setAsidePlaintextMessages(db: Connection) throws
     func createContactsTable(db: Connection) throws
     func createMessagesTable(db: Connection) throws
 }
@@ -29,17 +30,25 @@ enum ContactsTable {
     static let pairedAt = SQLite.Expression<Date>("pairedAt")
 }
 
-/// Messages exchanged with contacts, keyed by the contact's account id.
-/// Plain text for now: encrypting it is the next storage step
-/// (session-workflow.md, "Message storage").
+/// Messages exchanged with contacts, keyed by the contact's account id. The
+/// text is sealed with the contact's key (storage option B,
+/// session-workflow.md, "Message storage"); who, when and the status are not.
 enum MessagesTable {
     static let name = "messages"
     static let messages = Table(name)
     static let id = SQLite.Expression<UUID>("id")
     static let peer = SQLite.Expression<UUID>("peer")
-    static let text = SQLite.Expression<String>("text")
+    static let sealedText = SQLite.Expression<Data>("sealedText")
     static let date = SQLite.Expression<Date>("date")
     static let status = SQLite.Expression<Int>("status")
+}
+
+/// The plain-text messages table of builds before storage option B, renamed
+/// out of the way until its rows are sealed into `messages`.
+enum PlaintextMessagesTable {
+    static let name = "messages_plaintext"
+    static let messages = Table(name)
+    static let text = SQLite.Expression<String>("text")
 }
 
 struct SQLiteSchema: SQLiteSchemaProtocol {
@@ -52,6 +61,24 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
             try db.run(Table(table).drop(ifExists: true))
         }
         SCLogger.logger.info(message: "Placeholder chat tables dropped", category: .Database)
+    }
+
+    //MARK: Plaintext messages
+
+    /// A `messages` table with a `text` column is from before storage option
+    /// B: renamed, for `MessageStore` to seal and then drop.
+    func setAsidePlaintextMessages(db: Connection) throws {
+        guard try db.tableExists(MessagesTable.name),
+              try db.columnExists("text", in: MessagesTable.name),
+              !(try db.tableExists(PlaintextMessagesTable.name)) else { return }
+        try db.run("ALTER TABLE \(MessagesTable.name) RENAME TO \(PlaintextMessagesTable.name)")
+        // Its indexes kept their names, which the new table's would reuse.
+        let indexes = try db.prepare("""
+            SELECT name FROM sqlite_master
+            WHERE type = 'index' AND tbl_name = ? AND name NOT LIKE 'sqlite_autoindex%'
+            """, PlaintextMessagesTable.name).compactMap { $0[0] as? String }
+        for index in indexes { try db.run("DROP INDEX \"\(index)\"") }
+        SCLogger.logger.info(message: "Plain-text messages set aside for sealing", category: .Database)
     }
 
     //MARK: Contacts Table
@@ -86,7 +113,7 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
         try db.run(MessagesTable.messages.create { t in
             t.column(MessagesTable.id, primaryKey: true)
             t.column(MessagesTable.peer)
-            t.column(MessagesTable.text)
+            t.column(MessagesTable.sealedText)
             t.column(MessagesTable.date)
             t.column(MessagesTable.status)
         })
@@ -97,6 +124,10 @@ struct SQLiteSchema: SQLiteSchemaProtocol {
 }
 
 extension Connection {
+    func columnExists(_ column: String, in table: String) throws -> Bool {
+        try prepare("PRAGMA table_info(\(table))").contains { row in (row[1] as? String) == column }
+    }
+
     func tableExists(_ name: String) throws -> Bool {
         let count = try scalar(
             "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?",

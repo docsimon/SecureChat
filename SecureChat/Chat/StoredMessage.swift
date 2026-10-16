@@ -31,6 +31,9 @@ struct StoredMessage: Identifiable, Equatable {
 
     var isMine: Bool { status != .received }
 
+    /// Shown for a stored message whose key is gone or whose bytes changed.
+    static let unreadableText = "This message can't be read."
+
     init(id: UUID = UUID(), peer: UUID, text: String, date: Date = Date(), status: Status) {
         self.id = id
         self.peer = peer

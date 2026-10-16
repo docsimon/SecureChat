@@ -39,6 +39,8 @@ struct ChatListScreen: View {
     let dep: DependencyManager
     /// Non-nil while the "Add contact" screen is up; one view model per visit.
     @State private var pairingViewModel: PairingViewModel?
+    /// The chat whose messages are about to be deleted, while confirming.
+    @State private var deleting: PairedContact?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -54,6 +56,9 @@ struct ChatListScreen: View {
                         ChatRow(contact: contact, last: dep.messageStore.messages(with: contact.accountUUID).last,
                                 presence: dep.relayConnection.peerStatus[contact.accountUUID]?.presence)
                     }
+                    .swipeActions {
+                        Button("Delete messages", systemImage: "trash", role: .destructive) { deleting = contact }
+                    }
                 }
             }
             .navigationTitle("Chats")
@@ -61,6 +66,15 @@ struct ChatListScreen: View {
                 if let contact = dep.contactRepo.contacts.first(where: { $0.accountUUID == account }) {
                     ConversationView(viewModel: dep.makeConversationViewModel(with: contact))
                 }
+            }
+            .confirmationDialog("Delete all messages with \(deleting?.displayName ?? "")?",
+                                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                                titleVisibility: .visible) {
+                Button("Delete messages", role: .destructive) {
+                    if let contact = deleting { deleteMessages(with: contact) }
+                }
+            } message: {
+                Text("They can't be recovered. The contact stays.")
             }
             .sheet(item: $pairingViewModel) { viewModel in
                 PairingView(viewModel: viewModel)
@@ -85,6 +99,17 @@ struct ChatListScreen: View {
             default: break
             }
         }
+    }
+}
+
+extension ChatListScreen {
+    private func deleteMessages(with contact: PairedContact) {
+        do {
+            try dep.messageStore.deleteMessages(with: contact.accountUUID)
+        } catch {
+            SCLogger.logger.error(message: "Could not delete messages", error: error, category: .Database)
+        }
+        deleting = nil
     }
 }
 

@@ -45,7 +45,7 @@ final class IntegrationDevice {
         identityProvider = LocalIdentityProvider(identityStore: identity, accountStore: account)
         let db = try SQLiteDB(path: ":memory:")
         contacts = ContactRepository(db: db)
-        messages = MessageStore(db: db)
+        messages = MessageStore(db: db, keys: .inMemory(), keepKeysFor: [])
         profile = ProfileStore(defaults: defaults)
         profile.displayName = name
     }

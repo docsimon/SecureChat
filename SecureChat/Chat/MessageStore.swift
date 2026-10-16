@@ -4,7 +4,9 @@
 //
 //  The messages of every chat, kept in memory and written through to the
 //  database. Callers say "save this text for this contact"; how it is
-//  stored (plain now, encrypted per contact next) stays in here.
+//  stored stays in here: the text sealed with the contact's key
+//  (`MessageKeyStore`, storage option B), so deleting a chat deletes its key
+//  first and whatever is left on disk can no longer be read.
 //
 
 import Foundation
@@ -15,11 +17,18 @@ final class MessageStore {
     private var byPeer: [UUID: [StoredMessage]] = [:]
 
     @ObservationIgnored private let db: DatabaseStrategy
+    @ObservationIgnored private let keys: MessageKeyStore
 
-    init(db: DatabaseStrategy) {
+    /// - Parameter keepKeysFor: contacts whose keys must stay. Any other
+    ///   key is deleted (a reinstall leaves the Keychain behind).
+    init(db: DatabaseStrategy, keys: MessageKeyStore, keepKeysFor contacts: Set<UUID>) {
         self.db = db
+        self.keys = keys
+        sealPlaintextMessages()
         do {
-            byPeer = Dictionary(grouping: try db.fetchMessages(), by: \.peer)
+            let rows = try db.fetchMessages()
+            byPeer = Dictionary(grouping: rows.map(open), by: \.peer)
+            try keys.deleteAll(except: contacts.union(byPeer.keys))
         } catch {
             SCLogger.logger.error(message: "Could not read messages", error: error, category: .Database)
         }
@@ -32,7 +41,7 @@ final class MessageStore {
 
     func add(_ message: StoredMessage) {
         do {
-            try db.addMessage(message)
+            try db.addMessage(try seal(message))
         } catch {
             // Still shown: losing it from the screen too would hide that it
             // was written or received at all.
@@ -61,5 +70,57 @@ final class MessageStore {
     /// The connection dropped: whatever was waiting will never go out.
     func resolveAllWaiting(as status: StoredMessage.Status) {
         for peer in byPeer.keys { resolveWaiting(with: peer, as: status) }
+    }
+
+    /// Deletes the chat's messages, the key FIRST: once it is gone, any copy
+    /// left behind (a journal, a free page, worn flash) cannot be read.
+    /// The contact stays; a next message gets a new key.
+    func deleteMessages(with peer: UUID) throws {
+        try keys.delete(for: peer)
+        byPeer[peer] = nil
+        try db.deleteMessages(with: peer)
+    }
+
+    // MARK: Sealing
+
+    private func seal(_ message: StoredMessage) throws -> SealedMessage {
+        let key = try keys.key(for: message.peer)
+        return SealedMessage(id: message.id, peer: message.peer,
+                             sealedText: try MessageSeal.seal(message.text, id: message.id, peer: message.peer, key: key),
+                             date: message.date, status: message.status)
+    }
+
+    private func open(_ row: SealedMessage) -> StoredMessage {
+        var text = StoredMessage.unreadableText
+        do {
+            if let key = try keys.existingKey(for: row.peer) {
+                text = try MessageSeal.open(row.sealedText, id: row.id, peer: row.peer, key: key)
+            }
+        } catch {
+            SCLogger.logger.error(message: "A stored message could not be opened", category: .Database)
+        }
+        return StoredMessage(id: row.id, peer: row.peer, text: text, date: row.date, status: row.status)
+    }
+
+    /// Builds before storage option B wrote plain text: seal it, then drop
+    /// the old table and rewrite the file. If sealing fails the plain rows
+    /// stay put for the next launch rather than being lost.
+    private func sealPlaintextMessages() {
+        do {
+            let plaintext = try db.plaintextMessages()
+            guard !plaintext.isEmpty else {
+                try db.dropPlaintextMessages()
+                return
+            }
+            // A run that stopped halfway has sealed some already.
+            let sealed = Set(try db.fetchMessages().map(\.id))
+            for message in plaintext where !sealed.contains(message.id) {
+                try db.addMessage(try seal(message))
+            }
+            try db.dropPlaintextMessages()
+            SCLogger.logger.info(message: "Sealed \(plaintext.count) plain-text messages", category: .Database)
+        } catch {
+            SCLogger.logger.error(message: "Could not seal plain-text messages", error: error, category: .Database)
+        }
     }
 }

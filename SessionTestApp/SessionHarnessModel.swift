@@ -71,13 +71,14 @@ final class SessionHarnessModel: ObservableObject {
             .flatMap { try? JSONDecoder().decode([PairedContact].self, from: $0) } ?? []
     }
 
-    /// A Simulator reaches the Mac as localhost; a phone needs the Mac's LAN
-    /// address (the same one AuthServerConfig uses).
+    /// A Simulator reaches the Mac as localhost; a phone needs the Mac's
+    /// local network name (the same one AuthServerConfig uses). An address
+    /// saved by an earlier run is kept: edit the field to change it.
     static var defaultRelayURL: String {
         #if targetEnvironment(simulator)
         return "ws://localhost:8081/relay"
         #else
-        return "ws://192.168.0.84:8081/relay"
+        return "ws://docs-MacBook-Pro-2.local:8081/relay"
         #endif
     }
 

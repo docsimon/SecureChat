@@ -160,7 +160,10 @@ private struct FailingContactsDB: DatabaseStrategy {
     func fetchContacts() throws -> [PairedContact] { [] }
     func addContact(_ contact: PairedContact) throws { throw Failure() }
 
-    func fetchMessages() throws -> [StoredMessage] { [] }
-    func addMessage(_ message: StoredMessage) throws {}
+    func fetchMessages() throws -> [SealedMessage] { [] }
+    func addMessage(_ message: SealedMessage) throws {}
     func updateStatus(of ids: [UUID], to status: StoredMessage.Status) throws {}
+    func deleteMessages(with peer: UUID) throws {}
+    func plaintextMessages() throws -> [StoredMessage] { [] }
+    func dropPlaintextMessages() throws {}
 }

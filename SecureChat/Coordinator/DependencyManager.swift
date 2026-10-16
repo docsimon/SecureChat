@@ -57,7 +57,8 @@ final class DependencyManager {
         // Pairing
         contactRepo = ContactRepository(db: db)
         // Sessions
-        messageStore = MessageStore(db: db)
+        messageStore = MessageStore(db: db, keys: .live,
+                                    keepKeysFor: Set(contactRepo.contacts.map(\.accountUUID)))
         let identityProvider = identityProvider
         relayConnection = RelayConnection(
             identity: identityProvider.loadForSessions,

@@ -54,6 +54,16 @@ SessionKit live relay tests against the relay being released
     live relay test "someone who only wrote to us is not told"; on a phone
     A's dot is already red from "didn't answer", so it cannot be seen.)
 
+## Stored messages (seen 2026-10-16)
+
+11. Quit SecureChat and open it again: every chat shows its messages,
+    with their status.
+12. First launch of a build with storage option B over an earlier one:
+    messages written before are still there and readable.
+13. Swipe a chat, "Delete messages", confirm: its messages are gone, after
+    a relaunch too; the contact and the other chats stay; a new message to
+    that contact works.
+
 ## Recording a run
 
 Note the date, the builds, the phones and the relay under test at the end
@@ -62,3 +72,5 @@ of this file, with anything that differed.
 - 2026-10-15: SecureChat on iPhone 16 Plus, `SessionTestApp` on iPhone X,
   docker relay on the Mac, development accounts. Steps 1–10 as described;
   reported working by the user.
+- 2026-10-16: same phones and relay, SecureChat installed over the
+  2026-10-15 build. Steps 11–13 as described; reported working by the user.

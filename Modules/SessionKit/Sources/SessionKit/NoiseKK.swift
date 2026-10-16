@@ -33,6 +33,9 @@ public struct NoiseTransport {
     public internal(set) var receive: CipherState
     /// Identical on both sides when the handshake succeeded.
     public let handshakeHash: Data
+    /// The Double Ratchet's first root key: a third output of the final
+    /// HKDF, independent of the two transport keys.
+    let ratchetSecret: Data
 }
 
 /// Starts the handshake: the phone that opened the chat.
@@ -71,8 +74,8 @@ public struct NoiseKKInitiator {
         symmetric.mixKey(try dh(ephemeral, re))
         symmetric.mixKey(try dh(localStatic, re))
         let payload = try symmetric.decryptAndHash(rest)
-        let (c1, c2) = symmetric.split()
-        return (payload, NoiseTransport(send: c1, receive: c2, handshakeHash: symmetric.h))
+        let (c1, c2, secret) = symmetric.split()
+        return (payload, NoiseTransport(send: c1, receive: c2, handshakeHash: symmetric.h, ratchetSecret: secret))
     }
 }
 
@@ -116,8 +119,8 @@ public struct NoiseKKResponder {
         symmetric.mixKey(try dh(ephemeral, remoteEphemeral))
         symmetric.mixKey(try dh(ephemeral, remoteStatic))
         let message = e + (try symmetric.encryptAndHash(payload))
-        let (c1, c2) = symmetric.split()
-        return (message, NoiseTransport(send: c2, receive: c1, handshakeHash: symmetric.h))
+        let (c1, c2, secret) = symmetric.split()
+        return (message, NoiseTransport(send: c2, receive: c1, handshakeHash: symmetric.h, ratchetSecret: secret))
     }
 }
 
@@ -213,9 +216,14 @@ private struct SymmetricState {
         return plaintext
     }
 
-    func split() -> (CipherState, CipherState) {
+    /// Split, plus the third HKDF output (§4.3 defines up to three) as the
+    /// ratchet's secret. The two transport keys are what the specification's
+    /// Split gives, unchanged.
+    func split() -> (CipherState, CipherState, Data) {
         let (k1, k2) = hkdf(ck, Data())
-        return (CipherState(key: SymmetricKey(data: k1)), CipherState(key: SymmetricKey(data: k2)))
+        let tempKey = SymmetricKey(data: hmac(SymmetricKey(data: ck), Data()))
+        let k3 = hmac(tempKey, k2 + Data([0x03]))
+        return (CipherState(key: SymmetricKey(data: k1)), CipherState(key: SymmetricKey(data: k2)), k3)
     }
 
     /// HKDF with two outputs, as defined in §4.3 on HMAC-SHA256.

@@ -121,8 +121,9 @@ struct SessionPacket: Equatable {
 public enum SessionContent: Equatable, Sendable {
     case text(String)
 
-    /// Plaintext size: whatever leaves room for the 16-byte tag in a packet.
-    static let paddedSize = SessionPacket.maxMessageSize - 16
+    /// Plaintext size: whatever leaves room in a packet for Noise's 16-byte
+    /// tag and the ratchet's header and tag.
+    static let paddedSize = SessionPacket.maxMessageSize - 16 - DoubleRatchet.overhead
     static let headerSize = 3
     /// The most UTF-8 bytes one message can hold.
     public static let maxContentBytes = paddedSize - headerSize

@@ -169,10 +169,12 @@ One-way, so holding `CK_5` reveals nothing about `MK_1..4`. This is **forward se
 
 Implementation hazards:
 
-- **`MAX_SKIP` must be capped** (~1000). Out-of-order messages require deriving and caching skipped message keys; a header claiming counter 2,000,000 is a trivial DoS otherwise.
+- **`MAX_SKIP` must be capped** (~1000). Out-of-order messages require deriving and caching skipped message keys; a header claiming counter 2,000,000 is a trivial DoS otherwise. *Built with `MAX_SKIP` = 0 (2026-10-16): the ratchet runs inside the Noise transport, which delivers in order or not at all, so any gap is refused. See `session-workflow.md`, "Double Ratchet".*
 - **Key deletion is the entire security property.** SQLite WAL files, journals, and freelist pages retain deleted rows. Store ratchet state outside the main DB, or rely on crypto-shredding.
 
 Alternative considered: fresh handshake per session, skipping the DH ratchet. Gives session-level forward secrecy for much less code but loses per-message granularity within long sessions. Full ratchet preferred.
+
+*Built 2026-10-16 with both: a fresh Noise handshake per session, and a full ratchet inside it that lives only as long as the session (in memory, never stored). Chosen with the user as option A; see `session-workflow.md`.*
 
 ---
 

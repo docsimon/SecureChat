@@ -49,11 +49,21 @@ public final class SessionEngine {
         public var events: [Event] = []
     }
 
-    public static let prologue = Data("SecureChat session v1".utf8)
+    /// v2: the Double Ratchet. A v1 peer fails the handshake instead of
+    /// misreading messages.
+    public static let prologue = Data("SecureChat session v2".utf8)
+
+    /// The open session: Noise carries the ratchet's messages, so the relay
+    /// never sees the ratchet's headers.
+    private struct Established {
+        var transport: NoiseTransport
+        var ratchet: DoubleRatchet
+    }
 
     private enum State {
-        case initiating(NoiseKKInitiator)
-        case established(NoiseTransport)
+        /// Our first ratchet key went out in handshake 1's payload.
+        case initiating(NoiseKKInitiator, ratchetKey: Curve25519.KeyAgreement.PrivateKey)
+        case established(Established)
     }
 
     private let localStatic: Curve25519.KeyAgreement.PrivateKey
@@ -104,8 +114,9 @@ public final class SessionEngine {
         guard sessions[peer] == nil else { return output }
         guard let remote = contactKey(peer) else { throw SessionError.notAContact }
         var initiator = NoiseKKInitiator(prologue: Self.prologue, localStatic: localStatic, remoteStatic: remote)
-        let message = try initiator.writeMessage1()
-        sessions[peer] = .initiating(initiator)
+        let ratchetKey = Curve25519.KeyAgreement.PrivateKey()
+        let message = try initiator.writeMessage1(payload: ratchetKey.publicKey.rawRepresentation)
+        sessions[peer] = .initiating(initiator, ratchetKey: ratchetKey)
         output.frames.append(try frame(to: peer, .handshake1, message))
         return output
     }
@@ -116,9 +127,9 @@ public final class SessionEngine {
         _ = try content.padded()
         guard contactKey(peer) != nil else { throw SessionError.notAContact }
         switch sessions[peer] {
-        case .established(var transport):
-            let output = Output(frames: [try transportFrame(content, to: peer, using: &transport)])
-            sessions[peer] = .established(transport)
+        case .established(var session):
+            let output = Output(frames: [try transportFrame(content, to: peer, using: &session)])
+            sessions[peer] = .established(session)
             return output
         case .initiating:
             queued[peer, default: []].append(content)
@@ -165,9 +176,13 @@ public final class SessionEngine {
         }
         var responder = NoiseKKResponder(prologue: Self.prologue, localStatic: localStatic, remoteStatic: remote)
         do {
-            _ = try responder.readMessage1(message)
-            let (reply, transport) = try responder.writeMessage2()
-            sessions[peer] = .established(transport)
+            let remoteRatchetKey = try ratchetKey(in: try responder.readMessage1(message))
+            let ratchetKey = Curve25519.KeyAgreement.PrivateKey()
+            let (reply, transport) = try responder.writeMessage2(payload: ratchetKey.publicKey.rawRepresentation)
+            let ratchet = try DoubleRatchet.responder(secret: transport.ratchetSecret,
+                                                      sessionBinding: transport.handshakeHash,
+                                                      ownKey: ratchetKey, remoteKey: remoteRatchetKey)
+            sessions[peer] = .established(Established(transport: transport, ratchet: ratchet))
             var output = Output(frames: [try frame(to: peer, .handshake2, reply)],
                                 events: [.established(peer: peer)])
             output.frames += flushQueue(for: peer)
@@ -180,10 +195,13 @@ public final class SessionEngine {
     }
 
     private func receiveHandshake2(_ message: Data, from peer: Data) -> Output {
-        guard case .initiating(var initiator) = sessions[peer] else { return Output() }
+        guard case .initiating(var initiator, let ratchetKey) = sessions[peer] else { return Output() }
         do {
-            let (_, transport) = try initiator.readMessage2(message)
-            sessions[peer] = .established(transport)
+            let (payload, transport) = try initiator.readMessage2(message)
+            let ratchet = try DoubleRatchet.initiator(secret: transport.ratchetSecret,
+                                                      sessionBinding: transport.handshakeHash,
+                                                      ownKey: ratchetKey, remoteKey: try self.ratchetKey(in: payload))
+            sessions[peer] = .established(Established(transport: transport, ratchet: ratchet))
             var output = Output(events: [.established(peer: peer)])
             output.frames += flushQueue(for: peer)
             return output
@@ -194,10 +212,10 @@ public final class SessionEngine {
     }
 
     private func receiveTransport(_ message: Data, from peer: Data) -> Output {
-        guard case .established(var transport) = sessions[peer] else { return Output() }
+        guard case .established(var session) = sessions[peer] else { return Output() }
         do {
-            let plaintext = try transport.receive.decrypt(message)
-            sessions[peer] = .established(transport)
+            let plaintext = try session.ratchet.decrypt(try session.transport.receive.decrypt(message))
+            sessions[peer] = .established(session)
             return Output(events: [.received(peer: peer, try SessionContent(unpadding: plaintext))])
         } catch {
             sessions[peer] = nil
@@ -208,17 +226,29 @@ public final class SessionEngine {
     // MARK: Helpers
 
     private func flushQueue(for peer: Data) -> [Data] {
-        guard case .established(var transport) = sessions[peer],
+        guard case .established(var session) = sessions[peer],
               let pending = queued.removeValue(forKey: peer) else { return [] }
         // Content was checked when it was queued, so this cannot fail.
-        let frames = pending.compactMap { try? transportFrame($0, to: peer, using: &transport) }
-        sessions[peer] = .established(transport)
+        let frames = pending.compactMap { try? transportFrame($0, to: peer, using: &session) }
+        sessions[peer] = .established(session)
         return frames
     }
 
+    /// Ratchet first, then Noise around it.
     private func transportFrame(_ content: SessionContent, to peer: Data,
-                                using transport: inout NoiseTransport) throws -> Data {
-        try frame(to: peer, .transport, try transport.send.encrypt(try content.padded()))
+                                using session: inout Established) throws -> Data {
+        let inner = try session.ratchet.encrypt(try content.padded())
+        return try frame(to: peer, .transport, try session.transport.send.encrypt(inner))
+    }
+
+    /// The peer's first ratchet key, from a handshake payload.
+    private func ratchetKey(in payload: Data) throws -> Curve25519.KeyAgreement.PublicKey {
+        guard payload.count == 32 else { throw RatchetError.malformedMessage }
+        do {
+            return try Curve25519.KeyAgreement.PublicKey(rawRepresentation: payload)
+        } catch {
+            throw RatchetError.invalidPublicKey
+        }
     }
 
     private func frame(to peer: Data, _ type: SessionPacket.PacketType, _ message: Data) throws -> Data {

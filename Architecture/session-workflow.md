@@ -29,7 +29,9 @@ does not even learn that this device is online.
 
 ## Protocol
 
-Noise `Noise_KK_25519_ChaChaPoly_SHA256`, prologue `SecureChat session v1`.
+Noise `Noise_KK_25519_ChaChaPoly_SHA256`, prologue `SecureChat session v2`
+(v1 until 2026-10-16; the version changed with the Double Ratchet, so a
+phone on the old build fails the handshake instead of misreading messages).
 
 ```
   -> s                      (known from pairing)
@@ -37,11 +39,13 @@ Noise `Noise_KK_25519_ChaChaPoly_SHA256`, prologue `SecureChat session v1`.
   ...
   -> e, es, ss              handshake 1 (initiator: whoever opened the chat)
   <- e, ee, se              handshake 2
-  then transport messages, one CipherState per direction
+  then transport messages, one CipherState per direction, each carrying
+  one Double Ratchet message
 ```
 
-Static keys are the identity keys (X25519) that pairing exchanged. Both
-handshake payloads are empty.
+Static keys are the identity keys (X25519) that pairing exchanged. Each
+handshake payload is the sender's first ratchet public key (32 bytes),
+encrypted and authenticated by the handshake.
 
 - **Both open the chat at once:** two handshake-1 messages cross. The phone
   whose account id is lower (byte order) stays initiator; the other drops
@@ -77,10 +81,16 @@ body (deliver)
   [1..2]   noise message length (big endian)
   [3..]    noise message, zero padded
 
-transport plaintext (padded BEFORE encryption, 8,283 bytes)
+noise transport plaintext = one ratchet message (8,283 bytes)
+  [0..31]  sender's ratchet public key
+  [32..35] PN, messages on the sender's previous chain (big endian)
+  [36..39] N, this message's number on its chain (big endian)
+  [40..]   ratchet ciphertext: the content below + 16-byte tag
+
+content (padded BEFORE encryption, 8,227 bytes)
   [0]      content type: 1 text (others reserved: receipt, control, media)
   [1..2]   content length (big endian)
-  [3..]    content (UTF-8, at most 8,280 bytes), zero padded
+  [3..]    content (UTF-8, at most 8,224 bytes), zero padded
 ```
 
 Transport ciphertext is always 8,283 + 16 bytes, so every transport frame is
@@ -88,6 +98,56 @@ the same length on the wire. The handshake messages are padded the same way
 at the body level. The routing id is the contact's account UUID, produced in
 one place (`RoutingID`) so a derived rendezvous id can replace it later
 (§10's hedge).
+
+## Double Ratchet (slice 2, 2026-10-16)
+
+Every message has its own key, forgotten once used; every change of
+direction mixes a fresh X25519 exchange in (`DoubleRatchet.swift`, Signal's
+specification). It sits **inside** the Noise transport, so the relay never
+sees its headers, and the frame size did not change.
+
+**Decision (with the user, 2026-10-16): option A, the ratchet lives as long
+as the session, in memory only.** The next session starts from a new
+handshake. Nothing new is stored, and a crash or reinstall cannot leave the
+two phones out of step. Option B (kept across sessions in the Keychain, as
+Signal does) only pays off with offline delivery, which §1 rules out; it
+can be added if that changes.
+
+What it adds over Noise alone: Noise gives each session its own keys, but
+one key per direction for the whole session. With the ratchet, a state
+stolen from memory during a session cannot open messages already read
+(forward secrecy per message), and stops opening new ones after a round
+trip it did not see (post-compromise security).
+
+Implementation choices (mine):
+
+- **Start:** the root key is a third output of Noise's final HKDF
+  (`NoiseTransport.ratchetSecret`; the two transport keys are unchanged, so
+  the published test vector still holds). The initiator's first ratchet key
+  goes in handshake 1's payload, the responder's in handshake 2's. The
+  responder ratchets once straight away, so either side can send first.
+- **KDFs:** root `HKDF-SHA256(salt: root key, ikm: DH, info: "SecureChat
+  ratchet root")` → new root key + chain key; chain `HMAC(ck, 0x01)` =
+  message key, `HMAC(ck, 0x02)` = next chain key; message
+  `HKDF(message key, info: "SecureChat ratchet message")` → ChaChaPoly key
+  + nonce. Associated data: the Noise handshake hash (binds the message to
+  the session) + the header.
+- **No skipped keys (`MAX_SKIP` = 0).** Noise transport messages arrive in
+  order or fail, so a ratchet message out of order, replayed or skipped is
+  refused, which ends the session like any decryption failure. Nothing to
+  cap, nothing kept.
+- A refused message changes nothing: the state only advances on success.
+- **Tests (`DoubleRatchetTests`):** conversation with many turns, responder
+  first; a key per message and per direction change; forward secrecy;
+  healing after a full round trip; tampering in header and body; replay,
+  skip and reorder; bound to the session; malformed input; a known-answer
+  test that pins the bytes for fixed keys (there is no published vector for
+  this exact construction, so it guards against accidental change, not
+  against a wrong design).
+
+**Known limits.** "Forgotten" means dropped from the state; Swift does not
+zero the memory it lived in. Healing needs both sides to keep talking: a
+one-way stream of messages stays on one chain.
 
 ## Relay
 
@@ -119,7 +179,7 @@ one place (`RoutingID`) so a derived rendezvous id can replace it later
 
 | Piece | State |
 |---|---|
-| `SessionKit` | Noise `KK` matches the published test vector (handshake hash and transport). 18 unit tests: stranger refused without a reply, contact id without the key refused, simultaneous open, offline peer, silent peer abandoned, peer restart, tampering, every frame 8,320 bytes, too-long text, nothing queued for a non-contact. `RelayClient` and `SessionService` built |
+| `SessionKit` | Noise `KK` matches the published test vector (handshake hash and transport). 18 unit tests: stranger refused without a reply, contact id without the key refused, simultaneous open, offline peer, silent peer abandoned, peer restart, tampering, every frame 8,320 bytes, too-long text, nothing queued for a non-contact. `RelayClient` and `SessionService` built. Since 2026-10-16 the Double Ratchet inside the transport: 31 tests, 10 of them the ratchet's |
 | Relay | `RelayServer/`, 9 tests (delivery with sender id rewritten, peer unavailable, wrong size closes, no or wrong credentials refused, dev flag off refuses claimed accounts; since 2026-10-15 "contact left" sent after a two-way exchange and not after a one-way one). Runs in docker on 8081; logs connection counts only, never ids |
 | End to end | `LiveRelayTests` (opt-in, `TEST_RUNNER_SESSIONKIT_LIVE_RELAY=ws://localhost:8081/relay`): two `SessionService`s open a session through the docker relay and exchange text; an offline contact is reported. Passed 2026-10-14 |
 | `SessionTestApp` | Used by hand on 2026-10-15: contacts added by pasted code, both connected, session opened, messages sent both ways; "unanswered" (contact removed on one side) and "offline" (one side disconnected) also seen |
@@ -239,7 +299,7 @@ two Simulators.
 
 ## Next
 
-1. Slice 2: Double Ratchet on the same frames.
+1. Phone test of the Double Ratchet (both phones need the new build).
 
 ## Known limits (reviewed 2026-10-14, SecureChat items 2026-10-15)
 
@@ -261,10 +321,11 @@ two Simulators.
   foreground** (each time with a new token on a registered device). Nothing
   tells the user why; the chat says "Connecting…".
 - **No unread marker** in the chat list; the row shows the last message.
-- **No splitting:** a message longer than 8,280 UTF-8 bytes cannot be sent
+- **No splitting:** a message longer than 8,224 UTF-8 bytes cannot be sent
+  (8,280 before the ratchet's header)
   (the send button is disabled and says so).
 
 ## Not in slice 1
 
-Double Ratchet (slice 2), local message encryption at rest, rate limits,
+Rate limits,
 token expiry on open connections, push, receipts, typing indicators.

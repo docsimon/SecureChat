@@ -64,6 +64,17 @@ SessionKit live relay tests against the relay being released
     a relaunch too; the contact and the other chats stay; a new message to
     that contact works.
 
+## Double Ratchet (step 14 seen 2026-10-16; step 15 not yet run)
+
+Both phones on a build from 2026-10-16 or later.
+
+14. Open the chat and send several messages each way, alternating and in
+    runs (three in a row from one side, then an answer): every one
+    arrives, in order.
+15. A phone still on an older build cannot open a session with one on the
+    new build: the chat says the contact didn't answer. Nothing garbled
+    appears on either side.
+
 ## Recording a run
 
 Note the date, the builds, the phones and the relay under test at the end
@@ -74,3 +85,6 @@ of this file, with anything that differed.
   reported working by the user.
 - 2026-10-16: same phones and relay, SecureChat installed over the
   2026-10-15 build. Steps 11–13 as described; reported working by the user.
+- 2026-10-16: same phones and relay, both on the Double Ratchet build.
+  Step 14 as described; reported working by the user. Step 15 (old build
+  against new) not run.
